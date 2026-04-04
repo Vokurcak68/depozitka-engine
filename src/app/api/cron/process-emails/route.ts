@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { resend, EMAIL_FROM } from "@/lib/resend";
+import { getTransporter, SMTP_FROM } from "@/lib/smtp";
 import { verifyCron } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Vercel Hobby: max 10s, Pro: 60s
 
 /**
- * Process email queue: pick pending emails from dpt_email_queue, send via Resend.
+ * Process email queue: pick pending emails from dpt_email_queue, send via SMTP.
  * 
  * Expected table: dpt_email_queue
  *   id, to_email, subject, html_body, text_body, status (pending/sent/failed),
@@ -17,9 +17,11 @@ export async function GET(req: NextRequest) {
   const authError = verifyCron(req);
   if (authError) return authError;
 
-  const BATCH_SIZE = 20; // Resend free: 100/day → conservative batch
+  const BATCH_SIZE = 20;
 
   try {
+    const transporter = getTransporter();
+
     // Fetch pending emails (oldest first, max 3 attempts)
     const { data: emails, error: fetchError } = await supabase
       .from("dpt_email_queue")
@@ -43,17 +45,13 @@ export async function GET(req: NextRequest) {
 
     for (const email of emails) {
       try {
-        const { error: sendError } = await resend.emails.send({
-          from: EMAIL_FROM,
+        await transporter.sendMail({
+          from: SMTP_FROM,
           to: email.to_email,
           subject: email.subject,
           html: email.html_body || undefined,
           text: email.text_body || undefined,
         });
-
-        if (sendError) {
-          throw new Error(sendError.message);
-        }
 
         // Mark as sent
         await supabase

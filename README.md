@@ -16,7 +16,7 @@ depozitka-engine      (Next.js)  ← Backend worker (tento repo)
 |----------|-------|----------|
 | `/api/cron/daily-jobs` | Master orchestrátor | Denně 8:00 UTC |
 | `/api/cron/fio-sync` | Stahování plateb z FIO, párování dle VS | ↑ voláno z daily-jobs |
-| `/api/cron/process-emails` | Odesílání emailů z fronty přes Resend | ↑ voláno z daily-jobs |
+| `/api/cron/process-emails` | Odesílání emailů z fronty přes SMTP | ↑ voláno z daily-jobs |
 | `/api/cron/fio-payout` | Výplaty prodávajícím přes FIO import | ↑ voláno z daily-jobs |
 
 ## Env vars
@@ -25,8 +25,12 @@ depozitka-engine      (Next.js)  ← Backend worker (tento repo)
 |----------|-------|
 | `SUPABASE_URL` | Depozitka Supabase URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key |
-| `RESEND_API_KEY` | Resend API klíč |
-| `EMAIL_FROM` | Odesílací adresa (default: `noreply@depozitka.eu`) |
+| `SMTP_HOST` | SMTP host (např. `smtp.forpsi.com`) |
+| `SMTP_PORT` | SMTP port (typicky `465` nebo `587`) |
+| `SMTP_USER` | SMTP uživatel |
+| `SMTP_PASS` | SMTP heslo |
+| `SMTP_FROM` | Odesílací adresa (např. `noreplay@depozitka.eu`) |
+| `SMTP_SECURE` | `true` pro SSL/TLS (typicky port 465) |
 | `FIO_API_TOKEN` | FIO API token |
 | `FIO_API_BASE` | FIO API base URL |
 | `ADMIN_PAYOUT_IBAN` | Admin IBAN pro provize |
@@ -46,8 +50,13 @@ depozitka-engine      (Next.js)  ← Backend worker (tento repo)
 supabase/migrations/001_email_queue_and_bank_transactions.sql
 ```
 
-## Resend setup
+## SMTP setup (Forpsi)
 
-1. Registrace na [resend.com](https://resend.com)
-2. Přidat doménu `depozitka.eu` → 3 DNS záznamy (MX, SPF, DKIM)
-3. Vygenerovat API key → `RESEND_API_KEY`
+1. V mail hostingu vytvoř mailbox/alias pro odesílání (např. `noreplay@depozitka.eu`)
+2. Nastav SMTP údaje do env (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`)
+3. `SMTP_SECURE=true` pro port 465
+
+## Poznámka
+
+- `process-emails` používá SMTP transport (nodemailer), ne Resend.
+- Fronta zůstává stejná: tabulka `dpt_email_queue`.
