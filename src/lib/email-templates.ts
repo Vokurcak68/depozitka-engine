@@ -101,7 +101,7 @@ function wrapLayout(mp: MarketplaceBranding, bodyHtml: string): string {
   const footerLines: string[] = [];
   if (mp.companyName) footerLines.push(esc(mp.companyName));
   if (mp.companyAddress) footerLines.push(esc(mp.companyAddress));
-  if (mp.companyId) footerLines.push(esc(mp.companyId));
+  if (mp.companyId) footerLines.push(`IČO: ${esc(mp.companyId)}`);
   if (mp.supportEmail)
     footerLines.push(
       `<a href="mailto:${esc(mp.supportEmail)}" style="color:${accent};">${esc(mp.supportEmail)}</a>`,
@@ -251,25 +251,23 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
     ]),
   );
 
-  // Payment instructions
-  if (d.escrowAccountNumber || d.paymentReference) {
+  // Payment instructions — always show if we have at least amount
+  {
     bodyParts.push(
       `<h3 style="margin:20px 0 8px;font-size:16px;color:#111827;">💳 Platební údaje</h3>`,
     );
 
+    const paymentLines: string[] = [];
+    if (d.escrowAccountNumber)
+      paymentLines.push(`<strong>Číslo účtu:</strong> ${esc(d.escrowAccountNumber)}`);
+    if (d.paymentReference)
+      paymentLines.push(`<strong>Variabilní symbol:</strong> <span style="font-size:18px;font-weight:700;color:${accent};">${esc(d.paymentReference)}</span>`);
+    if (d.amountCzk)
+      paymentLines.push(`<strong>Částka k úhradě:</strong> <span style="font-size:18px;font-weight:700;">${esc(d.amountCzk)} Kč</span>`);
+
     bodyParts.push(
       highlightBox(
-        [
-          d.escrowAccountNumber
-            ? `<strong>Číslo účtu:</strong> ${esc(d.escrowAccountNumber)}<br>`
-            : "",
-          d.paymentReference
-            ? `<strong>Variabilní symbol:</strong> <span style="font-size:18px;font-weight:700;color:${accent};">${esc(d.paymentReference)}</span><br>`
-            : "",
-          d.amountCzk
-            ? `<strong>Částka k úhradě:</strong> <span style="font-size:18px;font-weight:700;">${esc(d.amountCzk)} Kč</span>`
-            : "",
-        ].join(""),
+        paymentLines.join("<br>"),
         "#eff6ff",
         accent,
       ),
