@@ -100,18 +100,6 @@ function formatDate(iso: string | null): string | undefined {
   });
 }
 
-/**
- * Derive VS (variabilní symbol) from transaction_code or payment_reference.
- * DPT-2026-0042 → "20260042"
- */
-function deriveVs(tx: { payment_reference?: string; transaction_code?: string }): string | undefined {
-  if (tx.payment_reference) return tx.payment_reference;
-  if (!tx.transaction_code) return undefined;
-  // "DPT-2026-0042" → remove prefix and dashes → "20260042"
-  const digits = tx.transaction_code.replace(/[^0-9]/g, "");
-  return digits || undefined;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount): EmailData {
   return {
@@ -125,7 +113,7 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount)
     amountCzk: formatCzk(tx.amount_czk),
     feeAmountCzk: tx.fee_amount_czk ? formatCzk(tx.fee_amount_czk) : undefined,
     payoutAmountCzk: tx.payout_amount_czk ? formatCzk(tx.payout_amount_czk) : undefined,
-    paymentReference: deriveVs(tx),
+    paymentReference: tx.payment_reference || undefined,
     paymentDueAt: formatDate(tx.payment_due_at),
     escrowAccountNumber: escrow.accountNumber,
     escrowIban: escrow.iban,
