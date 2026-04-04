@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
-import { verifyCron } from "@/lib/cron-auth";
+import { preflight, verifyCron, withCors } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Vercel Hobby: max 10s, Pro: 60s
@@ -15,7 +15,7 @@ export const maxDuration = 30; // Vercel Hobby: max 10s, Pro: 60s
  */
 export async function GET(req: NextRequest) {
   const authError = verifyCron(req);
-  if (authError) return authError;
+  if (authError) return withCors(authError);
 
   const BATCH_SIZE = 20;
 
@@ -33,11 +33,11 @@ export async function GET(req: NextRequest) {
 
     if (fetchError) {
       console.error("Failed to fetch email queue:", fetchError);
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      return withCors(NextResponse.json({ error: fetchError.message }, { status: 500 }));
     }
 
     if (!emails || emails.length === 0) {
-      return NextResponse.json({ processed: 0, message: "No pending emails" });
+      return withCors(NextResponse.json({ processed: 0, message: "No pending emails" }));
     }
 
     let sent = 0;
@@ -82,12 +82,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ processed: emails.length, sent, failed });
+    return withCors(NextResponse.json({ processed: emails.length, sent, failed }));
   } catch (err) {
     console.error("process-emails error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 }
+    return withCors(
+      NextResponse.json(
+        { error: err instanceof Error ? err.message : "Unknown error" },
+        { status: 500 }
+      )
     );
   }
+}
+
+export async function OPTIONS() {
+  return preflight();
 }
