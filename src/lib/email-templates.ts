@@ -200,16 +200,18 @@ function _ctaButton(
 function qrPaymentBlock(d: EmailData): string {
   if (!d.escrowIban || !d.paymentReference || !d.amountCzk) return "";
 
-  // Build SPD string for Czech QR payment standard
+  // Build SPD string per Czech QR Platba standard (qr-platba.cz)
+  // Keys: ACC (povinný, IBAN), AM, CC, X-VS, MSG
   const amountNum = d.amountCzk.replace(/\s/g, "").replace(",", ".");
-  const spdString = [
+  const spdParts = [
     "SPD*1.0",
-    `AC:${d.escrowIban}`,
+    `ACC:${d.escrowIban}`,
     `AM:${amountNum}`,
     "CC:CZK",
     `X-VS:${d.paymentReference}`,
-    `MSG:Objednavka ${d.transactionCode}`,
-  ].join("*");
+    `MSG:PLATBA ${d.transactionCode.replace(/-/g, "")}`,
+  ];
+  const spdString = spdParts.join("*");
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(spdString)}`;
 
   return `<div style="text-align:center;margin:20px 0;">
