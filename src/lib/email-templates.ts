@@ -208,7 +208,7 @@ function qrPaymentBlock(d: EmailData): string {
     `ACC:${d.escrowIban}`,
     `AM:${amountNum}`,
     "CC:CZK",
-    `X-VS:${d.paymentReference}`,
+    `X-VS:${d.paymentReference.slice(0, 10)}`,
     `MSG:PLATBA ${d.transactionCode.replace(/-/g, "")}`,
   ];
   const spdString = spdParts.join("*");
