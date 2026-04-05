@@ -117,6 +117,8 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount)
     sellerEmail: tx.seller_email || "",
     amountCzk: formatCzk(tx.amount_czk),
     feeAmountCzk: tx.fee_amount_czk ? formatCzk(tx.fee_amount_czk) : undefined,
+    paidAmountCzk: tx.paid_amount != null && Number(tx.paid_amount) > 0 ? formatCzk(tx.paid_amount) : undefined,
+    remainingAmountCzk: tx.paid_amount != null && Number(tx.paid_amount) > 0 ? formatCzk(Number(tx.amount_czk) - Number(tx.paid_amount)) : undefined,
     payoutAmountCzk: tx.payout_amount_czk ? formatCzk(tx.payout_amount_czk) : undefined,
     paymentReference: tx.payment_reference || undefined,
     paymentDueAt: formatDate(tx.payment_due_at),

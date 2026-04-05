@@ -50,6 +50,8 @@ export interface EmailData {
 
   // Amounts
   amountCzk: string; // formatted e.g. "890,00"
+  paidAmountCzk?: string;
+  remainingAmountCzk?: string;
   feeAmountCzk?: string;
   payoutAmountCzk?: string;
 
@@ -197,12 +199,13 @@ function _ctaButton(
   </div>`;
 }
 
-function qrPaymentBlock(d: EmailData): string {
-  if (!d.escrowIban || !d.paymentReference || !d.amountCzk) return "";
+function qrPaymentBlock(d: EmailData, amountCzk?: string): string {
+  const amount = amountCzk || d.amountCzk;
+  if (!d.escrowIban || !d.paymentReference || !amount) return "";
 
   // Build SPD string per Czech QR Platba standard (qr-platba.cz)
   // Keys: ACC (povinný, IBAN), AM, CC, X-VS, MSG
-  const amountNum = d.amountCzk.replace(/\s/g, "").replace(",", ".");
+  const amountNum = amount.replace(/\s/g, "").replace(",", ".");
   const spdParts = [
     "SPD*1.0",
     `ACC:${d.escrowIban}`,
@@ -471,15 +474,50 @@ export function renderTemplate(
         intro: "Admin notifikace: byla vytvořena nová transakce.",
         includeVs: true,
       });
-    case "partial_paid_buyer":
-      return simpleTemplate(d, {
-        subject: `${mp.name}: Potvrzení částečné platby (${d.transactionCode})`,
-        title: "Evidujeme částečnou platbu",
-        intro:
-          "Dobrý den,<br>evidujeme částečnou úhradu k této transakci. Pro pokračování doplaťte zbývající částku.",
-        includeVs: true,
-        highlight: "Po připsání celé částky přepneme transakci do stavu Zaplaceno a prodávající dostane výzvu k odeslání.",
-      });
+    case "partial_paid_buyer": {
+      const accent = accentOrDefault(d.marketplace);
+      const paid = d.paidAmountCzk || "0,00";
+      const remaining = d.remainingAmountCzk || d.amountCzk;
+      const subject = `${mp.name}: Částečná úhrada přijata (${d.transactionCode})`;
+      const html = wrapLayout(
+        mp,
+        [
+          heading("Evidujeme částečnou platbu", accent),
+          paragraph("Dobrý den,<br>k této transakci jsme přijali jen část platby. Pro dokončení doplaťte zbývající částku."),
+          infoTable([
+            ["Kód transakce", d.transactionCode],
+            ["Č. objednávky", d.externalOrderId],
+            ["Kupující", d.buyerName],
+            ["Prodávající", d.sellerName],
+            ["Celková částka", `${d.amountCzk} Kč`],
+            ["Již uhrazeno", `${paid} Kč`],
+            ["Zbývá doplatit", `${remaining} Kč`],
+            ["Variabilní symbol", d.paymentReference],
+            ["Číslo účtu", d.escrowAccountNumber],
+          ]),
+          highlightBox("Po připsání doplatku přepneme transakci do stavu Zaplaceno a prodávající dostane výzvu k odeslání.", "#fff7ed", accent),
+          qrPaymentBlock(d, remaining),
+          paragraph(
+            `Dotazy? Napište nám na <a href=\"mailto:${esc(mp.supportEmail || "info@depozitka.cz")}\" style=\"color:${accent};\">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+          ),
+        ].join(""),
+      );
+      const text = [
+        subject,
+        "",
+        "Evidujeme částečnou platbu.",
+        `Kód transakce: ${d.transactionCode}`,
+        `Č. objednávky: ${d.externalOrderId}`,
+        `Celková částka: ${d.amountCzk} Kč`,
+        `Již uhrazeno: ${paid} Kč`,
+        `Zbývá doplatit: ${remaining} Kč`,
+        d.paymentReference ? `VS: ${d.paymentReference}` : "",
+        d.escrowAccountNumber ? `Číslo účtu: ${d.escrowAccountNumber}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      return { subject, html, text };
+    }
     case "partial_paid_seller":
       return simpleTemplate(d, {
         subject: `${mp.name}: Kupující uhradil část platby (${d.transactionCode})`,
