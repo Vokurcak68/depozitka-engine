@@ -230,24 +230,91 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Ensure key exists in catalog (FK in dpt_email_logs)
+    const { data: catalogRow } = await supabase
+      .from("dpt_email_template_catalog")
+      .select("key")
+      .eq("key", template_key)
+      .maybeSingle();
+
+    if (!catalogRow?.key) {
+      return withCors(
+        NextResponse.json(
+          { ok: false, error: `Template key not registered in dpt_email_template_catalog: ${template_key}` },
+          { status: 400 },
+        ),
+      );
+    }
+
+    // Insert log row first (queued), then update to sent/failed
+    const preview = rendered.text?.slice(0, 400) || rendered.subject;
+    const { data: logRow, error: logInsertErr } = await supabase
+      .from("dpt_email_logs")
+      .insert({
+        transaction_id,
+        template_key,
+        to_email: to_email.toLowerCase().trim(),
+        subject: rendered.subject,
+        body_preview: preview,
+        provider: "smtp",
+        status: "queued",
+      })
+      .select("id")
+      .single();
+
+    if (logInsertErr || !logRow?.id) {
+      return withCors(
+        NextResponse.json(
+          { ok: false, error: `Failed to create email log: ${logInsertErr?.message || "unknown"}` },
+          { status: 500 },
+        ),
+      );
+    }
+
     // Send immediately via SMTP
     const transporter = getTransporter();
-    const info = await transporter.sendMail({
-      from: SMTP_FROM,
-      to: to_email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-    });
-
-    return withCors(
-      NextResponse.json({
-        ok: true,
-        messageId: info?.messageId || null,
-        subject: rendered.subject,
+    try {
+      const info = await transporter.sendMail({
+        from: SMTP_FROM,
         to: to_email,
-      }),
-    );
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+
+      await supabase
+        .from("dpt_email_logs")
+        .update({
+          status: "sent",
+          sent_at: new Date().toISOString(),
+          provider_message_id: info?.messageId || null,
+          error_message: null,
+        })
+        .eq("id", logRow.id);
+
+      return withCors(
+        NextResponse.json({
+          ok: true,
+          messageId: info?.messageId || null,
+          subject: rendered.subject,
+          to: to_email,
+          logId: logRow.id,
+        }),
+      );
+    } catch (sendErr) {
+      const sendMsg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+      await supabase
+        .from("dpt_email_logs")
+        .update({
+          status: "failed",
+          error_message: sendMsg,
+        })
+        .eq("id", logRow.id);
+
+      return withCors(
+        NextResponse.json({ ok: false, error: sendMsg, logId: logRow.id }, { status: 500 }),
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[send-email] Error:", msg);

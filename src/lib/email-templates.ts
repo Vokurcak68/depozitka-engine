@@ -342,6 +342,9 @@ export type TemplateKey =
   | "tx_created_buyer"
   | "tx_created_seller"
   | "tx_created_admin"
+  | "partial_paid_buyer"
+  | "partial_paid_seller"
+  | "partial_paid_admin"
   | "payment_received_buyer"
   | "payment_received_seller"
   | "shipped_buyer"
@@ -466,6 +469,30 @@ export function renderTemplate(
         subject: `${mp.name}: Nová transakce ${d.transactionCode} (admin)`,
         title: "Byla založena nová transakce",
         intro: "Admin notifikace: byla vytvořena nová transakce.",
+        includeVs: true,
+      });
+    case "partial_paid_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Potvrzení částečné platby (${d.transactionCode})`,
+        title: "Evidujeme částečnou platbu",
+        intro:
+          "Dobrý den,<br>evidujeme částečnou úhradu k této transakci. Pro pokračování doplaťte zbývající částku.",
+        includeVs: true,
+        highlight: "Po připsání celé částky přepneme transakci do stavu Zaplaceno a prodávající dostane výzvu k odeslání.",
+      });
+    case "partial_paid_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Kupující uhradil část platby (${d.transactionCode})`,
+        title: "Kupující zaplatil zatím jen část",
+        intro:
+          "Dobrý den,<br>u této transakce evidujeme částečnou platbu od kupujícího. Na odeslání vyčkejte až na plnou úhradu.",
+        includeVs: true,
+      });
+    case "partial_paid_admin":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Částečná platba (${d.transactionCode})`,
+        title: "Admin notifikace: částečná platba",
+        intro: "U transakce evidujeme částečné uhrazení částky.",
         includeVs: true,
       });
     case "payment_received_buyer":
