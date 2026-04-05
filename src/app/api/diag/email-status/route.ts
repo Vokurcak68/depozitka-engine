@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { verifyCron, withCors, preflight } from "@/lib/cron-auth";
-import { verifySmtp } from "@/lib/smtp";
+import { verifySmtp, SMTP_FROM } from "@/lib/smtp";
 
 export const dynamic = "force-dynamic";
 

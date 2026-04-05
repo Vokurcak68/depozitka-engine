@@ -28,15 +28,15 @@ type QueueStats = {
 async function getMarketplaceBranding(
   marketplaceId: string,
 ): Promise<MarketplaceBranding | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("dpt_marketplaces")
     .select(
       "code, name, logo_url, accent_color, company_name, company_address, company_id, support_email, website_url",
     )
     .eq("id", marketplaceId)
-    .single();
+    .maybeSingle();
 
-  if (!data) return null;
+  if (error || !data) return null;
 
   return {
     code: data.code,
@@ -61,13 +61,13 @@ interface EscrowAccount {
 }
 
 async function getEscrowAccount(): Promise<EscrowAccount> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("dpt_settings")
     .select("value")
     .eq("key", "escrow_account")
-    .single();
+    .maybeSingle();
 
-  if (!data?.value) return {};
+  if (error || !data?.value) return {};
   const v = data.value as Record<string, string>;
   return {
     accountNumber: v.account_number || undefined,
@@ -235,12 +235,32 @@ async function processCoreLogs(batchSize: number): Promise<QueueStats> {
   }
 
   // Pre-fetch escrow account (same for all emails in batch)
-  const escrow = await getEscrowAccount();
+  let escrow: EscrowAccount = {};
+  try {
+    escrow = await getEscrowAccount();
+  } catch (e) {
+    console.warn("Failed to fetch escrow account, continuing with empty:", e);
+  }
 
   // Cache marketplace branding per marketplace_id
   const mpCache = new Map<string, MarketplaceBranding | null>();
 
-  const transporter = getTransporter();
+  let transporter;
+  try {
+    transporter = getTransporter();
+  } catch (e) {
+    stats.error = `SMTP init failed: ${e instanceof Error ? e.message : String(e)}`;
+    // Mark all as failed so they don't stay stuck as queued forever
+    for (const email of emails) {
+      await supabase
+        .from("dpt_email_logs")
+        .update({ status: "failed", error_message: stats.error })
+        .eq("id", email.id);
+      stats.failed++;
+    }
+    stats.processed = emails.length;
+    return stats;
+  }
 
   for (const email of emails) {
     try {
