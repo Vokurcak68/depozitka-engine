@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { registerShipment, getShipmentVerification } from "@/lib/shieldtrack";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     // Find transaction by shipping token
     const { data: tx, error: txErr } = await supabase
       .from("dpt_transactions")
-      .select("id, transaction_code, status, seller_email")
+      .select("id, transaction_code, status, seller_email, seller_name, buyer_name, buyer_email, payment_reference")
       .eq("shipping_token", token)
       .single();
 
@@ -74,6 +75,61 @@ export async function POST(req: NextRequest) {
     if (statusErr) {
       console.error("Status change error:", statusErr);
       return cors(NextResponse.json({ error: "Změna stavu selhala." }, { status: 500 }));
+    }
+
+    // Register shipment in ShieldTrack (non-blocking)
+    const tn = (trackingNumber || "").trim();
+    if (tn) {
+      try {
+        const stResult = await registerShipment({
+          tracking_number: tn,
+          carrier,
+          recipient_name: tx.buyer_name || "",
+          external_order_id: tx.payment_reference || tx.transaction_code,
+          sender_name: tx.seller_name || "",
+        });
+
+        if (stResult?.id) {
+          // Save shieldtrack_shipment_id
+          await supabase
+            .from("dpt_transactions")
+            .update({ shieldtrack_shipment_id: stResult.id })
+            .eq("id", tx.id);
+
+          // Check if already delivered
+          try {
+            const shipment = await getShipmentVerification(stResult.id);
+            const deliveryCheck = shipment.verification?.checks?.find(
+              (c) => c.name === "delivery_confirmed" && c.status === "passed",
+            );
+
+            if (deliveryCheck) {
+              await supabase
+                .from("dpt_transactions")
+                .update({
+                  st_score: shipment.verification?.score ?? null,
+                  st_status: shipment.verification?.status ?? null,
+                })
+                .eq("id", tx.id);
+
+              // Auto-deliver
+              await supabase.rpc("dpt_change_status", {
+                p_transaction_code: tx.transaction_code,
+                p_new_status: "delivered",
+                p_actor_role: "system",
+                p_actor_email: null,
+                p_note: "Auto-delivered via ShieldTrack (zásilka již doručena)",
+              });
+
+              console.log(`ShieldTrack: auto-delivered ${tx.transaction_code}`);
+            }
+          } catch (verifyErr) {
+            console.warn("ShieldTrack immediate delivery check failed:", verifyErr);
+          }
+        }
+      } catch (stError) {
+        console.warn("ShieldTrack registration failed (non-blocking):", stError);
+      }
     }
 
     return cors(NextResponse.json({ ok: true, transactionCode: tx.transaction_code }));
