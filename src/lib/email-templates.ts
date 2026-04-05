@@ -359,18 +359,236 @@ export type TemplateKey =
   | "payout_seller"
   | "payout_admin";
 
+type SimpleTemplateCfg = {
+  subject: string;
+  title: string;
+  intro: string;
+  includeVs?: boolean;
+  includeTracking?: boolean;
+  includePayout?: boolean;
+  highlight?: string;
+};
+
+function simpleTemplate(
+  d: EmailData,
+  cfg: SimpleTemplateCfg,
+): { subject: string; html: string; text: string } {
+  const accent = accentOrDefault(d.marketplace);
+  const mp = d.marketplace;
+
+  const rows: [string, string | undefined][] = [
+    ["Kód transakce", d.transactionCode],
+    ["Č. objednávky", d.externalOrderId],
+    ["Položka", d.listingTitle],
+    ["Kupující", d.buyerName],
+    ["Prodávající", d.sellerName],
+    ["Částka", `${d.amountCzk} Kč`],
+  ];
+
+  if (cfg.includeVs) rows.push(["Variabilní symbol", d.paymentReference]);
+  if (cfg.includePayout)
+    rows.push([
+      "Výplata prodávajícímu",
+      d.payoutAmountCzk ? `${d.payoutAmountCzk} Kč` : undefined,
+    ]);
+  if (cfg.includeTracking) {
+    rows.push(["Dopravce", d.shippingCarrier]);
+    rows.push(["Tracking číslo", d.shippingTrackingNumber]);
+    rows.push(["Tracking URL", d.shippingTrackingUrl]);
+  }
+
+  const html = wrapLayout(
+    mp,
+    [
+      heading(cfg.title, accent),
+      paragraph(cfg.intro),
+      infoTable(rows),
+      cfg.highlight ? highlightBox(cfg.highlight, "#eff6ff", accent) : "",
+      paragraph(
+        `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+      ),
+    ].join(""),
+  );
+
+  const text = [
+    cfg.subject,
+    "",
+    cfg.title,
+    cfg.intro.replace(/<br>/g, " "),
+    "",
+    `Kód transakce: ${d.transactionCode}`,
+    `Č. objednávky: ${d.externalOrderId}`,
+    d.listingTitle ? `Položka: ${d.listingTitle}` : "",
+    `Kupující: ${d.buyerName}`,
+    `Prodávající: ${d.sellerName}`,
+    `Částka: ${d.amountCzk} Kč`,
+    cfg.includeVs && d.paymentReference ? `VS: ${d.paymentReference}` : "",
+    cfg.includePayout && d.payoutAmountCzk
+      ? `Výplata prodávajícímu: ${d.payoutAmountCzk} Kč`
+      : "",
+    cfg.includeTracking && d.shippingCarrier ? `Dopravce: ${d.shippingCarrier}` : "",
+    cfg.includeTracking && d.shippingTrackingNumber
+      ? `Tracking: ${d.shippingTrackingNumber}`
+      : "",
+    cfg.includeTracking && d.shippingTrackingUrl
+      ? `Tracking URL: ${d.shippingTrackingUrl}`
+      : "",
+    cfg.highlight || "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { subject: cfg.subject, html, text };
+}
+
 /**
  * Render an email template by key.
  * Returns null if no HTML template is registered (fallback to DB plain-text).
  */
 export function renderTemplate(
   key: string,
-  data: EmailData,
+  d: EmailData,
 ): { subject: string; html: string; text: string } | null {
+  const mp = d.marketplace;
+
   switch (key) {
     case "tx_created_buyer":
-      return txCreatedBuyer(data);
-    // TODO: add more templates as we finalize the first one
+      return txCreatedBuyer(d);
+    case "tx_created_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Nová objednávka ${d.transactionCode}`,
+        title: "Nová transakce čeká na úhradu",
+        intro:
+          "Dobrý den,<br>u objednávky byla vytvořena nová transakce. Jakmile kupující zaplatí, pošleme vám výzvu k odeslání zásilky.",
+      });
+    case "tx_created_admin":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Nová transakce ${d.transactionCode} (admin)`,
+        title: "Byla založena nová transakce",
+        intro: "Admin notifikace: byla vytvořena nová transakce.",
+        includeVs: true,
+      });
+    case "payment_received_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Platba přijata (${d.transactionCode})`,
+        title: "Platba byla přijata",
+        intro:
+          "Dobrý den,<br>vaše platba byla úspěšně připsána. Prodávající nyní připraví odeslání zásilky.",
+        includeVs: true,
+      });
+    case "payment_received_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Kupující zaplatil (${d.transactionCode})`,
+        title: "Kupující uhradil platbu",
+        intro:
+          "Dobrý den,<br>platba od kupujícího byla přijata. Můžete připravit a odeslat zásilku.",
+        includeVs: true,
+      });
+    case "shipped_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Zboží odesláno (${d.transactionCode})`,
+        title: "Prodávající odeslal zásilku",
+        intro: "Dobrý den,<br>prodávající označil zásilku jako odeslanou.",
+        includeTracking: true,
+      });
+    case "delivered_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Zásilka doručena (${d.transactionCode})`,
+        title: "Zásilka byla doručena",
+        intro:
+          "Dobrý den,<br>zásilka byla označena jako doručená. Potvrďte prosím převzetí, aby mohla být výplata uvolněna prodávajícímu.",
+        includeTracking: true,
+      });
+    case "delivered_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Zásilka doručena kupujícímu (${d.transactionCode})`,
+        title: "Kupující převzal zásilku",
+        intro:
+          "Dobrý den,<br>zásilka byla doručena kupujícímu. Po potvrzení převzetí bude transakce dokončena.",
+        includeTracking: true,
+      });
+    case "completed_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Transakce dokončena (${d.transactionCode})`,
+        title: "Transakce je dokončena",
+        intro:
+          "Dobrý den,<br>transakce byla úspěšně dokončena. Děkujeme za využití bezpečné platby.",
+      });
+    case "completed_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Transakce dokončena (${d.transactionCode})`,
+        title: "Transakce je dokončena",
+        intro:
+          "Dobrý den,<br>transakce byla dokončena. Výplata bude zpracována dle pravidel marketplace.",
+        includePayout: true,
+      });
+    case "dispute_opened_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Otevřen spor (${d.transactionCode})`,
+        title: "Byl otevřen spor",
+        intro:
+          "Dobrý den,<br>u této transakce byl otevřen spor. Náš tým případ prověří a ozve se vám.",
+        highlight: d.note ? `Důvod: ${esc(d.note)}` : undefined,
+      });
+    case "dispute_opened_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Otevřen spor (${d.transactionCode})`,
+        title: "Byl otevřen spor",
+        intro:
+          "Dobrý den,<br>u této transakce byl otevřen spor. Náš tým případ prověří a ozve se vám.",
+        highlight: d.note ? `Důvod: ${esc(d.note)}` : undefined,
+      });
+    case "dispute_opened_admin":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Nový spor (${d.transactionCode})`,
+        title: "Nový spor čeká na řešení",
+        intro:
+          "Admin notifikace: byl otevřen spor a je potřeba manuální kontrola.",
+        highlight: d.note ? `Poznámka: ${esc(d.note)}` : undefined,
+      });
+    case "hold_set_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Transakce pozastavena (${d.transactionCode})`,
+        title: "Transakce je dočasně na hold",
+        intro: "Dobrý den,<br>transakce byla dočasně pozastavena.",
+        highlight: d.note ? `Důvod hold: ${esc(d.note)}` : undefined,
+      });
+    case "hold_set_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Transakce pozastavena (${d.transactionCode})`,
+        title: "Transakce je dočasně na hold",
+        intro: "Dobrý den,<br>transakce byla dočasně pozastavena.",
+        highlight: d.note ? `Důvod hold: ${esc(d.note)}` : undefined,
+      });
+    case "refunded_buyer":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Platba vrácena (${d.transactionCode})`,
+        title: "Platba byla vrácena",
+        intro:
+          "Dobrý den,<br>platba za transakci byla refundována kupujícímu.",
+      });
+    case "refunded_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Refundace provedena (${d.transactionCode})`,
+        title: "U transakce byla provedena refundace",
+        intro:
+          "Dobrý den,<br>u této transakce byla provedena refundace kupujícímu.",
+      });
+    case "payout_seller":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Výplata odeslána (${d.transactionCode})`,
+        title: "Výplata byla odeslána",
+        intro:
+          "Dobrý den,<br>výplata k této transakci byla odeslána na váš payout účet.",
+        includePayout: true,
+      });
+    case "payout_admin":
+      return simpleTemplate(d, {
+        subject: `${mp.name}: Výplata zpracována (${d.transactionCode})`,
+        title: "Výplata byla zpracována",
+        intro: "Admin notifikace: výplata byla úspěšně zpracována.",
+        includePayout: true,
+      });
     default:
       return null;
   }
