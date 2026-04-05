@@ -120,6 +120,9 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount)
     shippingCarrier: tx.shipping_carrier || undefined,
     shippingTrackingNumber: tx.shipping_tracking_number || undefined,
     shippingTrackingUrl: tx.shipping_tracking_url || undefined,
+    shipUrl: tx.shipping_token
+      ? `${process.env.NEXT_PUBLIC_ENGINE_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "depozitka-engine.vercel.app"}`}/ship/${tx.shipping_token}`
+      : undefined,
     marketplace: mp,
   };
 }

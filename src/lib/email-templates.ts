@@ -66,6 +66,9 @@ export interface EmailData {
   shippingTrackingNumber?: string;
   shippingTrackingUrl?: string;
 
+  // Ship page link (for seller to enter tracking)
+  shipUrl?: string;
+
   // Other
   note?: string;
 
@@ -372,6 +375,7 @@ type SimpleTemplateCfg = {
   includeVs?: boolean;
   includeTracking?: boolean;
   includePayout?: boolean;
+  includeShipLink?: boolean;
   highlight?: string;
 };
 
@@ -409,6 +413,13 @@ function simpleTemplate(
       heading(cfg.title, accent),
       paragraph(cfg.intro),
       infoTable(rows),
+      cfg.includeShipLink && d.shipUrl
+        ? `<div style="text-align:center;margin:24px 0;">
+            <a href="${esc(d.shipUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+              📦 Zadat tracking a odeslat zásilku
+            </a>
+           </div>`
+        : "",
       cfg.highlight ? highlightBox(cfg.highlight, "#eff6ff", accent) : "",
       paragraph(
         `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
@@ -438,6 +449,9 @@ function simpleTemplate(
       : "",
     cfg.includeTracking && d.shippingTrackingUrl
       ? `Tracking URL: ${d.shippingTrackingUrl}`
+      : "",
+    cfg.includeShipLink && d.shipUrl
+      ? `\nZadat tracking a odeslat zásilku: ${d.shipUrl}\n`
       : "",
     cfg.highlight || "",
   ]
@@ -543,11 +557,12 @@ export function renderTemplate(
       });
     case "payment_received_seller":
       return simpleTemplate(d, {
-        subject: `${mp.name}: Kupující zaplatil (${d.transactionCode})`,
+        subject: `${mp.name}: Kupující zaplatil — odešlete zásilku (${d.transactionCode})`,
         title: "Kupující uhradil platbu",
         intro:
-          "Dobrý den,<br>platba od kupujícího byla přijata. Můžete připravit a odeslat zásilku.",
+          "Dobrý den,<br>platba od kupujícího byla přijata. Připravte zásilku a klikněte na tlačítko níže pro zadání tracking čísla.",
         includeVs: true,
+        includeShipLink: true,
       });
     case "shipped_buyer":
       return simpleTemplate(d, {
