@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { verifyCron } from "@/lib/cron-auth";
+import { getTransporter } from "@/lib/smtp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -143,9 +144,10 @@ export async function GET(req: NextRequest) {
       }
 
       // Mark bank tx as matched
+      const isOverpaid = newPaid > totalAmount;
       await supabase
         .from("dpt_bank_transactions")
-        .update({ matched: true, matched_transaction_id: escrowTx.id })
+        .update({ matched: true, matched_transaction_id: escrowTx.id, overpaid: isOverpaid })
         .eq("bank_tx_id", bankTxId);
 
       // Queue confirmation emails when fully paid
@@ -170,6 +172,38 @@ export async function GET(req: NextRequest) {
       }
 
       matched++;
+    }
+
+    // Send admin alert if there are unmatched payments
+    try {
+      const { data: unmatchedRows } = await supabase
+        .from("dpt_bank_transactions")
+        .select("bank_tx_id, amount, variable_symbol, date, counter_account, message")
+        .eq("matched", false)
+        .eq("ignored", false)
+        .order("date", { ascending: false })
+        .limit(50);
+
+      const unmatched = unmatchedRows || [];
+      if (unmatched.length > 0) {
+        const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+        if (adminEmail) {
+          const lines = unmatched.map(
+            (u) =>
+              `• ${u.date || "?"} | ${Number(u.amount).toLocaleString("cs-CZ")} Kč | VS: ${u.variable_symbol || "—"} | ${u.counter_account || "—"} | ${u.message || ""}`,
+          );
+
+          const transporter = getTransporter();
+          await transporter.sendMail({
+            from: process.env.SMTP_FROM || adminEmail,
+            to: adminEmail,
+            subject: `⚠️ Depozitka: ${unmatched.length} nespárovaných plateb`,
+            text: `Po FIO syncu zůstává ${unmatched.length} nespárovaných plateb:\n\n${lines.join("\n")}\n\nPřihlas se do Depozitka Core → záložka Banka a vyřeš je.`,
+          });
+        }
+      }
+    } catch (alertErr) {
+      console.warn("Admin alert failed:", alertErr);
     }
 
     return NextResponse.json({
