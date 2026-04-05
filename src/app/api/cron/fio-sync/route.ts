@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { verifyCron } from "@/lib/cron-auth";
+import { verifyCron, withCors } from "@/lib/cron-auth";
 import { getTransporter } from "@/lib/smtp";
 
 export const dynamic = "force-dynamic";
@@ -22,16 +22,18 @@ const FIO_API_BASE = process.env.FIO_API_BASE || "https://fioapi.fio.cz/v1/rest"
  */
 export async function GET(req: NextRequest) {
   const authError = verifyCron(req);
-  if (authError) return authError;
+  if (authError) return withCors(authError);
 
   const FIO_TOKEN = process.env.FIO_API_TOKEN;
   if (!FIO_TOKEN) {
-    return NextResponse.json({ error: "FIO_API_TOKEN not configured" }, { status: 500 });
+    return withCors(NextResponse.json({ error: "FIO_API_TOKEN not configured" }, { status: 500 }));
   }
 
   try {
-    // Fetch new transactions from FIO (since last download)
-    const fioUrl = `${FIO_API_BASE}/last/${FIO_TOKEN}/transactions.json`;
+    // Fetch transactions from FIO (from 2026-04-01 onward to avoid legacy movements)
+    const FIO_START_DATE = "2026-04-01";
+    const today = new Date().toISOString().slice(0, 10);
+    const fioUrl = `${FIO_API_BASE}/periods/${FIO_TOKEN}/${FIO_START_DATE}/${today}/transactions.json`;
     const fioRes = await fetch(fioUrl, {
       headers: { Accept: "application/json" },
     });
@@ -39,10 +41,10 @@ export async function GET(req: NextRequest) {
     if (!fioRes.ok) {
       const text = await fioRes.text();
       console.error("FIO API error:", fioRes.status, text);
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: `FIO API ${fioRes.status}`, detail: text },
         { status: 502 },
-      );
+      ));
     }
 
     const fioData = await fioRes.json();
@@ -50,11 +52,11 @@ export async function GET(req: NextRequest) {
       fioData?.accountStatement?.transactionList?.transaction || [];
 
     if (transactions.length === 0) {
-      return NextResponse.json({
+      return withCors(NextResponse.json({
         synced: 0,
         matched: 0,
         message: "No new FIO transactions",
-      });
+      }));
     }
 
     let synced = 0;
@@ -206,17 +208,37 @@ export async function GET(req: NextRequest) {
       console.warn("Admin alert failed:", alertErr);
     }
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       synced,
       matched,
       total: transactions.length,
       ...(errors.length ? { errors } : {}),
-    });
+    }));
   } catch (err) {
     console.error("fio-sync error:", err);
-    return NextResponse.json(
+    return withCors(NextResponse.json(
       { error: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 },
-    );
+    ));
   }
+}
+
+/**
+ * POST handler — manual trigger from Core UI.
+ * Reuses GET logic. Auth via Authorization header or ?token= query.
+ */
+export async function POST(req: NextRequest) {
+  return GET(req);
+}
+
+/** CORS preflight for manual POST calls from Core UI */
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    },
+  });
 }
