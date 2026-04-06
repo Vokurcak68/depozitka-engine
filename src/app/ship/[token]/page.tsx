@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { notFound } from "next/navigation";
 import ShipForm from "./ShipForm";
+import PayoutAccountForm from "./PayoutAccountForm";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function ShipPage({
 
   const { data: tx } = await supabase
     .from("dpt_transactions")
-    .select("id, transaction_code, status, buyer_name, amount_czk, shipping_carrier, shipping_tracking_number")
+    .select("id, transaction_code, status, buyer_name, amount_czk, shipping_carrier, shipping_tracking_number, seller_payout_iban, seller_payout_account_name, seller_payout_locked_at")
     .eq("shipping_token", token)
     .single();
 
@@ -143,6 +144,13 @@ export default async function ShipPage({
                 Transakce není ve stavu pro odeslání zásilky (aktuální stav: {tx.status}).
               </div>
             )}
+
+            <PayoutAccountForm
+              token={token}
+              currentIban={tx.seller_payout_iban || null}
+              currentName={tx.seller_payout_account_name || null}
+              locked={!!tx.seller_payout_locked_at}
+            />
 
             {canShip && (
               <ShipForm token={token} carriers={CARRIERS} />
