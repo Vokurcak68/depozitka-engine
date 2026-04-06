@@ -38,25 +38,19 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Change status to completed
-    const { error: updateErr } = await supabase
-      .from("dpt_transactions")
-      .update({ status: "completed" })
-      .eq("id", tx.id);
-
-    if (updateErr) {
-      return NextResponse.json({ error: "Nepodařilo se aktualizovat transakci." }, { status: 500 });
-    }
-
-    // Insert event → triggers email via DB trigger
-    await supabase.from("dpt_transaction_events").insert({
-      transaction_id: tx.id,
-      event_type: "status_changed",
-      old_status: tx.status,
-      new_status: "completed",
-      actor_role: "buyer",
-      note: "Kupující potvrdil přijetí zásilky.",
+    // Change status via RPC (validates transitions, inserts event → triggers email)
+    const { error: statusErr } = await supabase.rpc("dpt_change_status", {
+      p_transaction_code: tx.transaction_code,
+      p_new_status: "completed",
+      p_actor_role: "buyer",
+      p_actor_email: tx.buyer_email || null,
+      p_note: "Kupující potvrdil přijetí zásilky.",
     });
+
+    if (statusErr) {
+      console.error("Confirm delivery error:", statusErr);
+      return NextResponse.json({ error: "Nepodařilo se aktualizovat transakci: " + statusErr.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, new_status: "completed" });
   }
@@ -73,29 +67,34 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const { error: updateErr } = await supabase
+    // Save dispute details first
+    const { error: disputeErr } = await supabase
       .from("dpt_transactions")
       .update({
-        status: "disputed",
         dispute_reason: reason.trim(),
         dispute_evidence_urls: evidence_urls || [],
         disputed_at: new Date().toISOString(),
       })
       .eq("id", tx.id);
 
-    if (updateErr) {
-      return NextResponse.json({ error: "Nepodařilo se otevřít spor." }, { status: 500 });
+    if (disputeErr) {
+      console.error("Dispute save error:", disputeErr);
+      return NextResponse.json({ error: "Nepodařilo se uložit důvod sporu." }, { status: 500 });
     }
 
-    // Insert event → triggers email via DB trigger
-    await supabase.from("dpt_transaction_events").insert({
-      transaction_id: tx.id,
-      event_type: "status_changed",
-      old_status: tx.status,
-      new_status: "disputed",
-      actor_role: "buyer",
-      note: `Spor otevřen kupujícím: ${reason.trim()}`,
+    // Change status via RPC (validates transitions, inserts event → triggers email)
+    const { error: statusErr } = await supabase.rpc("dpt_change_status", {
+      p_transaction_code: tx.transaction_code,
+      p_new_status: "disputed",
+      p_actor_role: "buyer",
+      p_actor_email: tx.buyer_email || null,
+      p_note: `Spor otevřen kupujícím: ${reason.trim()}`,
     });
+
+    if (statusErr) {
+      console.error("Dispute status error:", statusErr);
+      return NextResponse.json({ error: "Nepodařilo se otevřít spor: " + statusErr.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, new_status: "disputed" });
   }
