@@ -133,6 +133,9 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount,
     buyerUrl: tx.buyer_token
       ? `${process.env.NEXT_PUBLIC_ENGINE_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "depozitka-engine.vercel.app"}`}/buyer/${tx.buyer_token}`
       : undefined,
+    confirmUrl: tx.delivery_confirm_token
+      ? `${process.env.NEXT_PUBLIC_ENGINE_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "depozitka-engine.vercel.app"}`}/confirm/${tx.delivery_confirm_token}`
+      : undefined,
     buyerAddress: buyerAddress
       ? {
           recipientName: buyerAddress.recipient_name,

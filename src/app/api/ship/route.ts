@@ -49,12 +49,16 @@ export async function POST(req: NextRequest) {
       }, { status: 409 }));
     }
 
-    // Save carrier + tracking number
+    // Generate delivery confirm token for buyer
+    const deliveryConfirmToken = crypto.randomUUID();
+
+    // Save carrier + tracking number + confirm token
     const { error: updateErr } = await supabase
       .from("dpt_transactions")
       .update({
         shipping_carrier: carrier,
         shipping_tracking_number: (trackingNumber || "").trim() || null,
+        delivery_confirm_token: deliveryConfirmToken,
       })
       .eq("id", tx.id);
 

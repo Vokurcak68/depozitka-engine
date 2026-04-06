@@ -72,6 +72,9 @@ export interface EmailData {
   // Buyer page link (for buyer to fill delivery address + see payment)
   buyerUrl?: string;
 
+  // Buyer confirm/dispute link (for confirming delivery or opening dispute)
+  confirmUrl?: string;
+
   // Buyer delivery address (for seller after payment)
   buyerAddress?: {
     recipientName: string;
@@ -565,6 +568,7 @@ type SimpleTemplateCfg = {
   includeTracking?: boolean;
   includePayout?: boolean;
   includeShipLink?: boolean;
+  includeConfirmLink?: boolean;
   highlight?: string;
 };
 
@@ -606,6 +610,13 @@ function simpleTemplate(
         ? `<div style="text-align:center;margin:24px 0;">
             <a href="${esc(d.shipUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
               📦 Zadat tracking a odeslat zásilku
+            </a>
+           </div>`
+        : "",
+      cfg.includeConfirmLink && d.confirmUrl
+        ? `<div style="text-align:center;margin:24px 0;">
+            <a href="${esc(d.confirmUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+              ✅ Potvrdit doručení nebo otevřít spor
             </a>
            </div>`
         : "",
@@ -752,16 +763,18 @@ export function renderTemplate(
       return simpleTemplate(d, {
         subject: `${mp.name}: Zboží odesláno (${d.transactionCode})`,
         title: "Prodávající odeslal zásilku",
-        intro: "Dobrý den,<br>prodávající označil zásilku jako odeslanou.",
+        intro: "Dobrý den,<br>prodávající označil zásilku jako odeslanou. Po obdržení zásilky prosím potvrďte doručení.",
         includeTracking: true,
+        includeConfirmLink: true,
       });
     case "delivered_buyer":
       return simpleTemplate(d, {
-        subject: `${mp.name}: Zásilka doručena (${d.transactionCode})`,
+        subject: `${mp.name}: Zásilka doručena — potvrďte převzetí (${d.transactionCode})`,
         title: "Zásilka byla doručena",
         intro:
           "Dobrý den,<br>zásilka byla označena jako doručená. Potvrďte prosím převzetí, aby mohla být výplata uvolněna prodávajícímu.",
         includeTracking: true,
+        includeConfirmLink: true,
       });
     case "delivered_seller":
       return simpleTemplate(d, {
