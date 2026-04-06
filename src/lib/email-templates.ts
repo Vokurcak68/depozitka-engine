@@ -310,7 +310,7 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
 
   bodyParts.push(
     paragraph(
-      `Máte otázky? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+      `Máte otázky? Napište nám na <a href="mailto:${esc(mp.supportEmail || "noreplay@depozitka.eu")}" style="color:${accent};">${esc(mp.supportEmail || "noreplay@depozitka.eu")}</a>.`,
     ),
   );
 
@@ -333,7 +333,7 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
     d.buyerUrl ? `Odkaz: ${d.buyerUrl}` : "",
     d.paymentDueAt ? `Splatnost: ${d.paymentDueAt}` : "",
     "",
-    `Otázky: ${mp.supportEmail || "info@depozitka.cz"}`,
+    `Otázky: ${mp.supportEmail || "noreplay@depozitka.eu"}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -403,7 +403,7 @@ function paymentReceivedSeller(d: EmailData): { subject: string; html: string; t
 
   bodyParts.push(
     paragraph(
-      `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+      `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "noreplay@depozitka.eu")}" style="color:${accent};">${esc(mp.supportEmail || "noreplay@depozitka.eu")}</a>.`,
     ),
   );
 
@@ -496,7 +496,7 @@ function paymentDetailsBuyer(d: EmailData): { subject: string; html: string; tex
 
   bodyParts.push(
     paragraph(
-      `Máte otázky? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+      `Máte otázky? Napište nám na <a href="mailto:${esc(mp.supportEmail || "noreplay@depozitka.eu")}" style="color:${accent};">${esc(mp.supportEmail || "noreplay@depozitka.eu")}</a>.`,
     ),
   );
 
@@ -520,7 +520,7 @@ function paymentDetailsBuyer(d: EmailData): { subject: string; html: string; tex
     `Částka: ${d.amountCzk} Kč`,
     d.paymentDueAt ? `Splatnost: ${d.paymentDueAt}` : "",
     "",
-    `Otázky: ${mp.supportEmail || "info@depozitka.cz"}`,
+    `Otázky: ${mp.supportEmail || "noreplay@depozitka.eu"}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -611,7 +611,7 @@ function simpleTemplate(
         : "",
       cfg.highlight ? highlightBox(cfg.highlight, "#eff6ff", accent) : "",
       paragraph(
-        `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+        `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "noreplay@depozitka.eu")}" style="color:${accent};">${esc(mp.supportEmail || "noreplay@depozitka.eu")}</a>.`,
       ),
     ].join(""),
   );
@@ -703,7 +703,7 @@ export function renderTemplate(
           highlightBox("Po připsání doplatku přepneme transakci do stavu Zaplaceno a prodávající dostane výzvu k odeslání.", "#fff7ed", accent),
           qrPaymentBlock(d, remaining),
           paragraph(
-            `Dotazy? Napište nám na <a href=\"mailto:${esc(mp.supportEmail || "info@depozitka.cz")}\" style=\"color:${accent};\">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+            `Dotazy? Napište nám na <a href=\"mailto:${esc(mp.supportEmail || "noreplay@depozitka.eu")}\" style=\"color:${accent};\">${esc(mp.supportEmail || "noreplay@depozitka.eu")}</a>.`,
           ),
         ].join(""),
       );
