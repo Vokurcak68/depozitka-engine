@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
             await supabase.rpc("dpt_change_status", {
               p_transaction_code: tx.transaction_code,
               p_new_status: "delivered",
-              p_actor_role: "system",
+              p_actor_role: "service",
               p_actor_email: null,
               p_note:
                 "Auto-delivered via ShieldTrack (delivery_confirmed=pass)",
