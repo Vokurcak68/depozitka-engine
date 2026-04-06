@@ -152,26 +152,15 @@ export async function GET(req: NextRequest) {
         .update({ matched: true, matched_transaction_id: escrowTx.id, overpaid: isOverpaid })
         .eq("bank_tx_id", bankTxId);
 
-      // Queue confirmation emails when fully paid
-      if (isFullyPaid) {
-        // Email to buyer
-        await supabase.from("dpt_email_queue").insert({
-          to_email: escrowTx.buyer_email,
-          subject: `Platba přijata — ${escrowTx.transaction_code}`,
-          text_body: `Dobrý den,\n\nVaše platba ${totalAmount.toFixed(2)} Kč za transakci ${escrowTx.transaction_code} byla úspěšně přijata.\n\nProdávající bude informován k odeslání zboží.\n\nDěkujeme.`,
-          status: "pending",
-          attempts: 0,
-        });
-
-        // Email to seller
-        await supabase.from("dpt_email_queue").insert({
-          to_email: escrowTx.seller_email,
-          subject: `Platba přijata — odešlete zboží (${escrowTx.transaction_code})`,
-          text_body: `Dobrý den,\n\nKupující uhradil platbu za transakci ${escrowTx.transaction_code}.\n\nProsím odešlete zboží a zadejte trackingové číslo.\n\nDěkujeme.`,
-          status: "pending",
-          attempts: 0,
-        });
-      }
+      // Insert event → triggers pg_net instant email via DB trigger
+      await supabase.from("dpt_transaction_events").insert({
+        transaction_id: escrowTx.id,
+        event_type: "status_changed",
+        old_status: escrowTx.status,
+        new_status: newStatus,
+        actor_role: "service",
+        note: `FIO sync: přijato ${amount.toFixed(2)} Kč (VS ${vs}), celkem ${newPaid.toFixed(2)}/${totalAmount.toFixed(2)} Kč`,
+      });
 
       matched++;
     }
