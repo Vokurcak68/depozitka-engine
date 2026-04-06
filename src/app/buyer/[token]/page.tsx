@@ -1,20 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import { notFound } from "next/navigation";
-import ShipForm from "./ShipForm";
+import BuyerForm from "./BuyerForm";
 
 export const dynamic = "force-dynamic";
 
-const CARRIERS = [
-  { value: "ceska_posta", label: "Česká pošta" },
-  { value: "ppl", label: "PPL" },
-  { value: "dpd", label: "DPD" },
-  { value: "zasilkovna", label: "Zásilkovna" },
-  { value: "gls", label: "GLS" },
-  { value: "geis", label: "Geis" },
-  { value: "other", label: "Jiný" },
-];
-
-export default async function ShipPage({
+export default async function BuyerPage({
   params,
 }: {
   params: Promise<{ token: string }>;
@@ -28,30 +18,18 @@ export default async function ShipPage({
 
   const { data: tx } = await supabase
     .from("dpt_transactions")
-    .select("id, transaction_code, status, buyer_name, amount_czk, shipping_carrier, shipping_tracking_number")
-    .eq("shipping_token", token)
+    .select("id, transaction_code")
+    .eq("buyer_token", token)
     .single();
 
   if (!tx) notFound();
-
-  // Fetch buyer delivery address
-  const { data: buyerAddr } = await supabase
-    .from("dpt_transaction_addresses")
-    .select("recipient_name, phone, street, city, postal_code")
-    .eq("transaction_id", tx.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const alreadyShipped = ["shipped", "delivered", "completed", "auto_completed", "payout_sent", "payout_confirmed"].includes(tx.status);
-  const canShip = tx.status === "paid";
 
   return (
     <html lang="cs">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Odeslání zásilky — {tx.transaction_code}</title>
+        <title>Bezpečná platba — {tx.transaction_code}</title>
         <style>{`
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
           :root {
@@ -83,14 +61,22 @@ export default async function ShipPage({
           }
           .logo { text-align: center; margin-bottom: 16px; font-size: 0.85rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
           h1 { font-size: 1.25rem; margin-bottom: 16px; }
+          h2 { font-size: 1.1rem; }
           .info { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; font-size: 0.9rem; }
           .info span { color: var(--muted); }
           .info strong { color: var(--text); }
           .amount { font-size: 1.3rem; font-weight: 700; }
-          .alert { padding: 14px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; }
+          .vs { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+          .alert { padding: 14px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px; line-height: 1.5; }
           .alert-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
           .alert-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text); }
           .alert-error { background: var(--error-bg); border: 1px solid var(--error-border); color: var(--error-text); }
+          .payment-box {
+            display: flex; flex-direction: column; gap: 8px;
+            padding: 16px; background: var(--info-bg); border: 1px solid var(--info-border);
+            border-radius: 10px; font-size: 0.9rem;
+          }
+          .payment-box span { color: var(--muted); }
           label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--muted); }
           select, input[type="text"] {
             width: 100%; padding: 10px 12px; border: 1px solid var(--border);
@@ -112,41 +98,8 @@ export default async function ShipPage({
         <div className="container">
           <div className="card">
             <div className="logo">Depozitka — Bezpečná platba</div>
-            <h1>📦 Odeslání zásilky</h1>
-
-            <div className="info">
-              <div><span>Transakce:</span> <strong>{tx.transaction_code}</strong></div>
-              <div><span>Kupující:</span> <strong>{tx.buyer_name}</strong></div>
-              <div><span>Částka:</span> <strong className="amount">{Number(tx.amount_czk).toLocaleString("cs-CZ")} Kč</strong></div>
-            </div>
-
-            {buyerAddr && (
-              <div className="alert alert-info" style={{ marginBottom: "16px" }}>
-                <strong>📍 Doručovací adresa:</strong><br />
-                {buyerAddr.recipient_name}<br />
-                {buyerAddr.street && <>{buyerAddr.street}<br /></>}
-                {buyerAddr.city}{buyerAddr.postal_code && `, ${buyerAddr.postal_code}`}
-                {buyerAddr.phone && <><br />📞 {buyerAddr.phone}</>}
-              </div>
-            )}
-
-            {alreadyShipped && (
-              <div className="alert alert-success">
-                ✅ Zásilka již byla odeslána.
-                {tx.shipping_carrier && <><br />Dopravce: <strong>{tx.shipping_carrier}</strong></>}
-                {tx.shipping_tracking_number && <><br />Tracking: <strong>{tx.shipping_tracking_number}</strong></>}
-              </div>
-            )}
-
-            {!canShip && !alreadyShipped && (
-              <div className="alert alert-info">
-                Transakce není ve stavu pro odeslání zásilky (aktuální stav: {tx.status}).
-              </div>
-            )}
-
-            {canShip && (
-              <ShipForm token={token} carriers={CARRIERS} />
-            )}
+            <h1>🔒 Bezpečná platba</h1>
+            <BuyerForm token={token} />
           </div>
           <div className="footer">Depozitka © {new Date().getFullYear()}</div>
         </div>

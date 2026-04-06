@@ -69,6 +69,18 @@ export interface EmailData {
   // Ship page link (for seller to enter tracking)
   shipUrl?: string;
 
+  // Buyer page link (for buyer to fill delivery address + see payment)
+  buyerUrl?: string;
+
+  // Buyer delivery address (for seller after payment)
+  buyerAddress?: {
+    recipientName: string;
+    phone?: string;
+    street?: string;
+    city: string;
+    postalCode?: string;
+  };
+
   // Other
   note?: string;
 
@@ -235,7 +247,7 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
   const accent = accentOrDefault(d.marketplace);
   const mp = d.marketplace;
 
-  const subject = `${mp.name}: Objednávka ${d.transactionCode} — platební údaje`;
+  const subject = `${mp.name}: Objednávka ${d.transactionCode} — vyplňte doručovací adresu`;
 
   const bodyParts: string[] = [];
 
@@ -259,38 +271,28 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
     ]),
   );
 
-  // Payment instructions — always show if we have at least amount
-  {
+  // CTA — fill delivery address first
+  bodyParts.push(
+    `<h3 style="margin:20px 0 8px;font-size:16px;color:#111827;">📍 Další krok: vyplňte doručovací adresu</h3>`,
+  );
+  bodyParts.push(
+    paragraph(
+      `Pro zobrazení platebních údajů je nejdřív potřeba zadat adresu, kam má být zásilka doručena. Klikněte na tlačítko níže:`,
+    ),
+  );
+
+  if (d.buyerUrl) {
     bodyParts.push(
-      `<h3 style="margin:20px 0 8px;font-size:16px;color:#111827;">💳 Platební údaje</h3>`,
+      _ctaButton("📍 Zadat adresu a zobrazit platbu", d.buyerUrl, accent),
     );
+  }
 
-    const paymentLines: string[] = [];
-    if (d.escrowAccountNumber)
-      paymentLines.push(`<strong>Číslo účtu:</strong> ${esc(d.escrowAccountNumber)}`);
-    if (d.paymentReference)
-      paymentLines.push(`<strong>Variabilní symbol:</strong> <span style="font-size:18px;font-weight:700;color:${accent};">${esc(d.paymentReference)}</span>`);
-    if (d.amountCzk)
-      paymentLines.push(`<strong>Částka k úhradě:</strong> <span style="font-size:18px;font-weight:700;">${esc(d.amountCzk)} Kč</span>`);
-
+  if (d.paymentDueAt) {
     bodyParts.push(
-      highlightBox(
-        paymentLines.join("<br>"),
-        "#eff6ff",
-        accent,
+      paragraph(
+        `⏰ <strong>Platbu proveďte do ${esc(d.paymentDueAt)}</strong>. Po uplynutí lhůty bude objednávka automaticky zrušena.`,
       ),
     );
-
-    // QR code
-    bodyParts.push(qrPaymentBlock(d));
-
-    if (d.paymentDueAt) {
-      bodyParts.push(
-        paragraph(
-          `⏰ <strong>Platbu proveďte do ${esc(d.paymentDueAt)}</strong>. Po uplynutí lhůty bude objednávka automaticky zrušena.`,
-        ),
-      );
-    }
   }
 
   // How it works
@@ -299,9 +301,10 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
   );
   bodyParts.push(
     paragraph(
-      `1. Převedete částku na escrow účet (výše uvedené údaje)<br>
-       2. Peníze jsou bezpečně drženy, dokud nepotvrdíte převzetí zboží<br>
-       3. Po potvrzení doručení se výplata uvolní prodávajícímu`,
+      `1. Zadáte doručovací adresu a zobrazí se platební údaje<br>
+       2. Převedete částku na escrow účet<br>
+       3. Peníze jsou bezpečně drženy, dokud nepotvrdíte převzetí zboží<br>
+       4. Po potvrzení doručení se výplata uvolní prodávajícímu`,
     ),
   );
 
@@ -319,6 +322,191 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
     "",
     "Dobrý den,",
     `děkujeme za nákup na ${mp.name}.`,
+    "",
+    `Kód transakce: ${d.transactionCode}`,
+    `Č. objednávky: ${d.externalOrderId}`,
+    d.listingTitle ? `Položka: ${d.listingTitle}` : "",
+    `Prodávající: ${d.sellerName}`,
+    `Částka: ${d.amountCzk} Kč`,
+    "",
+    "DALŠÍ KROK: Zadejte doručovací adresu pro zobrazení platebních údajů.",
+    d.buyerUrl ? `Odkaz: ${d.buyerUrl}` : "",
+    d.paymentDueAt ? `Splatnost: ${d.paymentDueAt}` : "",
+    "",
+    `Otázky: ${mp.supportEmail || "info@depozitka.cz"}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { subject, html, text };
+}
+
+// ---------------------------------------------------------------------------
+// Template: payment_received_seller (includes buyer delivery address)
+// ---------------------------------------------------------------------------
+
+function paymentReceivedSeller(d: EmailData): { subject: string; html: string; text: string } {
+  const accent = accentOrDefault(d.marketplace);
+  const mp = d.marketplace;
+
+  const subject = `${mp.name}: Kupující zaplatil — odešlete zásilku (${d.transactionCode})`;
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(heading("Kupující uhradil platbu", accent));
+
+  bodyParts.push(
+    paragraph(
+      `Dobrý den,<br>
+       platba od kupujícího byla přijata. Připravte zásilku k odeslání.`,
+    ),
+  );
+
+  bodyParts.push(
+    infoTable([
+      ["Kód transakce", d.transactionCode],
+      ["Č. objednávky", d.externalOrderId],
+      ["Položka", d.listingTitle],
+      ["Kupující", d.buyerName],
+      ["Částka", `${d.amountCzk} Kč`],
+      ["Variabilní symbol", d.paymentReference],
+    ]),
+  );
+
+  // Delivery address
+  if (d.buyerAddress) {
+    bodyParts.push(
+      `<h3 style="margin:20px 0 8px;font-size:16px;color:#111827;">📍 Doručovací adresa</h3>`,
+    );
+
+    const addrLines: string[] = [];
+    addrLines.push(`<strong>${esc(d.buyerAddress.recipientName)}</strong>`);
+    if (d.buyerAddress.street) addrLines.push(esc(d.buyerAddress.street));
+    addrLines.push(`${esc(d.buyerAddress.city)}${d.buyerAddress.postalCode ? `, ${esc(d.buyerAddress.postalCode)}` : ""}`);
+    if (d.buyerAddress.phone) addrLines.push(`📞 ${esc(d.buyerAddress.phone)}`);
+
+    bodyParts.push(
+      highlightBox(addrLines.join("<br>"), "#f0fdf4", "#22c55e"),
+    );
+  }
+
+  // Ship button
+  if (d.shipUrl) {
+    bodyParts.push(
+      `<div style="text-align:center;margin:24px 0;">
+        <a href="${esc(d.shipUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+          📦 Zadat tracking a odeslat zásilku
+        </a>
+       </div>`,
+    );
+  }
+
+  bodyParts.push(
+    paragraph(
+      `Dotazy? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+    ),
+  );
+
+  const html = wrapLayout(mp, bodyParts.join(""));
+
+  const text = [
+    subject,
+    "",
+    "Kupující uhradil platbu. Připravte zásilku k odeslání.",
+    "",
+    `Kód transakce: ${d.transactionCode}`,
+    `Č. objednávky: ${d.externalOrderId}`,
+    d.listingTitle ? `Položka: ${d.listingTitle}` : "",
+    `Kupující: ${d.buyerName}`,
+    `Částka: ${d.amountCzk} Kč`,
+    d.paymentReference ? `VS: ${d.paymentReference}` : "",
+    "",
+    d.buyerAddress ? `DORUČOVACÍ ADRESA:` : "",
+    d.buyerAddress ? d.buyerAddress.recipientName : "",
+    d.buyerAddress?.street || "",
+    d.buyerAddress ? `${d.buyerAddress.city}${d.buyerAddress.postalCode ? `, ${d.buyerAddress.postalCode}` : ""}` : "",
+    d.buyerAddress?.phone ? `Tel: ${d.buyerAddress.phone}` : "",
+    "",
+    d.shipUrl ? `Zadat tracking: ${d.shipUrl}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { subject, html, text };
+}
+
+// ---------------------------------------------------------------------------
+// Template: payment_details_buyer (sent after address is filled)
+// ---------------------------------------------------------------------------
+
+function paymentDetailsBuyer(d: EmailData): { subject: string; html: string; text: string } {
+  const accent = accentOrDefault(d.marketplace);
+  const mp = d.marketplace;
+
+  const subject = `${mp.name}: Platební údaje k objednávce ${d.transactionCode}`;
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(heading("Platební údaje k vaší objednávce", accent));
+
+  bodyParts.push(
+    paragraph(
+      `Dobrý den,<br>
+       doručovací adresa byla úspěšně uložena. Níže naleznete platební údaje pro dokončení objednávky.`,
+    ),
+  );
+
+  bodyParts.push(
+    infoTable([
+      ["Kód transakce", d.transactionCode],
+      ["Č. objednávky", d.externalOrderId],
+      ["Položka", d.listingTitle],
+      ["Prodávající", d.sellerName],
+      ["Částka", `${d.amountCzk} Kč`],
+    ]),
+  );
+
+  // Payment instructions
+  bodyParts.push(
+    `<h3 style="margin:20px 0 8px;font-size:16px;color:#111827;">💳 Platební údaje</h3>`,
+  );
+
+  const paymentLines: string[] = [];
+  if (d.escrowAccountNumber)
+    paymentLines.push(`<strong>Číslo účtu:</strong> ${esc(d.escrowAccountNumber)}`);
+  if (d.paymentReference)
+    paymentLines.push(`<strong>Variabilní symbol:</strong> <span style="font-size:18px;font-weight:700;color:${accent};">${esc(d.paymentReference)}</span>`);
+  if (d.amountCzk)
+    paymentLines.push(`<strong>Částka k úhradě:</strong> <span style="font-size:18px;font-weight:700;">${esc(d.amountCzk)} Kč</span>`);
+
+  bodyParts.push(
+    highlightBox(paymentLines.join("<br>"), "#eff6ff", accent),
+  );
+
+  // QR code
+  bodyParts.push(qrPaymentBlock(d));
+
+  if (d.paymentDueAt) {
+    bodyParts.push(
+      paragraph(
+        `⏰ <strong>Platbu proveďte do ${esc(d.paymentDueAt)}</strong>. Po uplynutí lhůty bude objednávka automaticky zrušena.`,
+      ),
+    );
+  }
+
+  bodyParts.push(
+    paragraph(
+      `Máte otázky? Napište nám na <a href="mailto:${esc(mp.supportEmail || "info@depozitka.cz")}" style="color:${accent};">${esc(mp.supportEmail || "info@depozitka.cz")}</a>.`,
+    ),
+  );
+
+  const html = wrapLayout(mp, bodyParts.join(""));
+
+  const text = [
+    `${mp.name}: Platební údaje k objednávce ${d.transactionCode}`,
+    "",
+    "Dobrý den,",
+    "doručovací adresa byla uložena. Níže jsou platební údaje.",
     "",
     `Kód transakce: ${d.transactionCode}`,
     `Č. objednávky: ${d.externalOrderId}`,
@@ -346,6 +534,7 @@ function txCreatedBuyer(d: EmailData): { subject: string; html: string; text: st
 
 export type TemplateKey =
   | "tx_created_buyer"
+  | "payment_details_buyer"
   | "tx_created_seller"
   | "tx_created_admin"
   | "partial_paid_buyer"
@@ -474,6 +663,8 @@ export function renderTemplate(
   switch (key) {
     case "tx_created_buyer":
       return txCreatedBuyer(d);
+    case "payment_details_buyer":
+      return paymentDetailsBuyer(d);
     case "tx_created_seller":
       return simpleTemplate(d, {
         subject: `${mp.name}: Nová objednávka ${d.transactionCode}`,
@@ -556,14 +747,7 @@ export function renderTemplate(
         includeVs: true,
       });
     case "payment_received_seller":
-      return simpleTemplate(d, {
-        subject: `${mp.name}: Kupující zaplatil — odešlete zásilku (${d.transactionCode})`,
-        title: "Kupující uhradil platbu",
-        intro:
-          "Dobrý den,<br>platba od kupujícího byla přijata. Připravte zásilku a klikněte na tlačítko níže pro zadání tracking čísla.",
-        includeVs: true,
-        includeShipLink: true,
-      });
+      return paymentReceivedSeller(d);
     case "shipped_buyer":
       return simpleTemplate(d, {
         subject: `${mp.name}: Zboží odesláno (${d.transactionCode})`,

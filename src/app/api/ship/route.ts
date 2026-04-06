@@ -81,10 +81,21 @@ export async function POST(req: NextRequest) {
     const tn = (trackingNumber || "").trim();
     if (tn) {
       try {
+        // Load buyer address for ShieldTrack matching
+        const { data: buyerAddr } = await supabase
+          .from("dpt_transaction_addresses")
+          .select("recipient_name, city, postal_code")
+          .eq("transaction_id", tx.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
         const stResult = await registerShipment({
           tracking_number: tn,
           carrier,
-          recipient_name: tx.buyer_name || "",
+          recipient_name: buyerAddr?.recipient_name || tx.buyer_name || "",
+          recipient_city: buyerAddr?.city || undefined,
+          recipient_zip: buyerAddr?.postal_code || undefined,
           external_order_id: tx.payment_reference || tx.transaction_code,
           sender_name: tx.seller_name || "",
         });

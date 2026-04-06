@@ -106,7 +106,7 @@ function formatDate(iso: string | null): string | undefined {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount): EmailData {
+function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount, buyerAddress?: { recipient_name: string; phone?: string; street?: string; city: string; postal_code?: string }): EmailData {
   return {
     transactionCode: tx.transaction_code,
     externalOrderId: tx.external_order_id || "",
@@ -129,6 +129,18 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount)
     shippingTrackingUrl: tx.shipping_tracking_url || undefined,
     shipUrl: tx.shipping_token
       ? `${process.env.NEXT_PUBLIC_ENGINE_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "depozitka-engine.vercel.app"}`}/ship/${tx.shipping_token}`
+      : undefined,
+    buyerUrl: tx.buyer_token
+      ? `${process.env.NEXT_PUBLIC_ENGINE_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "depozitka-engine.vercel.app"}`}/buyer/${tx.buyer_token}`
+      : undefined,
+    buyerAddress: buyerAddress
+      ? {
+          recipientName: buyerAddress.recipient_name,
+          phone: buyerAddress.phone || undefined,
+          street: buyerAddress.street || undefined,
+          city: buyerAddress.city,
+          postalCode: buyerAddress.postal_code || undefined,
+        }
       : undefined,
     marketplace: mp,
   };
@@ -223,7 +235,22 @@ export async function POST(req: NextRequest) {
     }
 
     // Build data + render template
-    const emailData = buildEmailData(tx, mp, escrow);
+    // Fetch buyer delivery address (for seller emails that need it)
+    let buyerAddr: { recipient_name: string; phone?: string; street?: string; city: string; postal_code?: string } | undefined;
+    try {
+      const { data: addr } = await supabase
+        .from("dpt_transaction_addresses")
+        .select("recipient_name, phone, street, city, postal_code")
+        .eq("transaction_id", transaction_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (addr) buyerAddr = addr as typeof buyerAddr;
+    } catch {
+      // non-critical
+    }
+
+    const emailData = buildEmailData(tx, mp, escrow, buyerAddr);
     const rendered = renderTemplate(template_key, emailData);
 
     if (!rendered) {
