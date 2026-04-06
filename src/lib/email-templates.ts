@@ -681,8 +681,7 @@ export function renderTemplate(
         subject: `${mp.name}: Nová objednávka ${d.transactionCode}`,
         title: "Nová transakce čeká na úhradu",
         intro:
-          "Dobrý den,<br>u objednávky byla vytvořena nová transakce. Jakmile kupující zaplatí, pošleme vám výzvu k odeslání zásilky.<br><br>Mezitím si prosím <strong>nastavte číslo účtu pro výplatu</strong> na odkazu níže.",
-        includeShipLink: true,
+          "Dobrý den,<br>u objednávky byla vytvořena nová transakce. Jakmile kupující zaplatí, pošleme vám výzvu k odeslání zásilky.",
       });
     case "tx_created_admin":
       return simpleTemplate(d, {
