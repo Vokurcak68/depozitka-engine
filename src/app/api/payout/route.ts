@@ -42,10 +42,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Transakce nenalezena." }, { status: 404 });
   }
 
-  // Validate status — payout only from completed/auto_completed/payout_sent
-  if (!["completed", "auto_completed"].includes(tx.status)) {
+  // Validate status — payout only from delivered/completed/auto_completed
+  if (!["delivered", "completed", "auto_completed"].includes(tx.status)) {
     return NextResponse.json({
-      error: `Výplata možná jen z completed/auto_completed (aktuální: ${tx.status}).`,
+      error: `Výplata možná jen z delivered/completed/auto_completed (aktuální: ${tx.status}).`,
     }, { status: 400 });
   }
 

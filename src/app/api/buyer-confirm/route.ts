@@ -38,10 +38,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // Already delivered? Nothing to do — buyer confirmation only moves shipped → delivered
+    if (tx.status === "delivered") {
+      return NextResponse.json({ success: true, new_status: "delivered", already: true });
+    }
+
     // Change status via RPC (validates transitions, inserts event → triggers email)
     const { error: statusErr } = await supabase.rpc("dpt_change_status", {
       p_transaction_code: tx.transaction_code,
-      p_new_status: "completed",
+      p_new_status: "delivered",
       p_actor_role: "buyer",
       p_actor_email: tx.buyer_email || null,
       p_note: "Kupující potvrdil přijetí zásilky.",
@@ -52,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nepodařilo se aktualizovat transakci: " + statusErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, new_status: "completed" });
+    return NextResponse.json({ success: true, new_status: "delivered" });
   }
 
   // --- OPEN DISPUTE ---
