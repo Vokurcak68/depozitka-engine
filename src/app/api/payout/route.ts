@@ -6,6 +6,17 @@ export const dynamic = "force-dynamic";
 
 const FIO_API_BASE = process.env.FIO_API_BASE || "https://fioapi.fio.cz/v1/rest";
 
+function cors(res: NextResponse): NextResponse {
+  res.headers.set("Access-Control-Allow-Origin", "*");
+  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return res;
+}
+
+export async function OPTIONS() {
+  return cors(new NextResponse(null, { status: 204 }));
+}
+
 /**
  * POST /api/payout
  * Manuální výplata prodávajícímu — odešle FIO platební příkaz.
@@ -15,18 +26,18 @@ const FIO_API_BASE = process.env.FIO_API_BASE || "https://fioapi.fio.cz/v1/rest"
  */
 export async function POST(req: NextRequest) {
   const authError = verifyCron(req);
-  if (authError) return authError;
+  if (authError) return cors(authError);
 
   const FIO_TOKEN = process.env.FIO_API_TOKEN;
   if (!FIO_TOKEN) {
-    return NextResponse.json({ error: "FIO_API_TOKEN not configured" }, { status: 500 });
+    return cors(NextResponse.json({ error: "FIO_API_TOKEN not configured" }, { status: 500 }));
   }
 
   const body = await req.json();
   const { transaction_id } = body;
 
   if (!transaction_id) {
-    return NextResponse.json({ error: "Chybí transaction_id." }, { status: 400 });
+    return cors(NextResponse.json({ error: "Chybí transaction_id." }, { status: 400 }));
   }
 
   const supabase = getSupabase();
@@ -39,25 +50,25 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (txErr || !tx) {
-    return NextResponse.json({ error: "Transakce nenalezena." }, { status: 404 });
+    return cors(NextResponse.json({ error: "Transakce nenalezena." }, { status: 404 }));
   }
 
   // Validate status — payout only from delivered/completed/auto_completed
   if (!["delivered", "completed", "auto_completed"].includes(tx.status)) {
-    return NextResponse.json({
+    return cors(NextResponse.json({
       error: `Výplata možná jen z delivered/completed/auto_completed (aktuální: ${tx.status}).`,
-    }, { status: 400 });
+    }, { status: 400 }));
   }
 
   // Check IBAN
   const iban = tx.seller_payout_iban;
   if (!iban) {
-    return NextResponse.json({ error: "Prodávající nemá nastavený IBAN pro výplatu." }, { status: 400 });
+    return cors(NextResponse.json({ error: "Prodávající nemá nastavený IBAN pro výplatu." }, { status: 400 }));
   }
 
   const payoutAmount = tx.payout_amount_czk;
   if (!payoutAmount || payoutAmount <= 0) {
-    return NextResponse.json({ error: "Částka výplaty je 0 nebo neplatná." }, { status: 400 });
+    return cors(NextResponse.json({ error: "Částka výplaty je 0 nebo neplatná." }, { status: 400 }));
   }
 
   try {
@@ -119,16 +130,16 @@ export async function POST(req: NextRequest) {
       // FIO payment was already submitted, log but don't fail
     }
 
-    return NextResponse.json({
+    return cors(NextResponse.json({
       success: true,
       amount: payoutAmount,
       iban: cleanIban,
       fio_response: fioResult.substring(0, 500),
-    });
+    }));
   } catch (err) {
     console.error("Payout error:", err);
-    return NextResponse.json({
+    return cors(NextResponse.json({
       error: err instanceof Error ? err.message : "Chyba při odesílání výplaty.",
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
