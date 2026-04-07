@@ -44,10 +44,27 @@ function ibanToAccount(iban: string): { accountNumber: string; bankCode: string 
   return { accountNumber, bankCode };
 }
 
+/**
+ * Akceptuje:
+ *  - CZ účet "1234567890/0100" nebo "19-2000145399/0800"
+ *  - IBAN "CZ65 0800 0000 1920 0014 5399" (s mezerami i bez)
+ * Vrací jednotný { accountNumber, bankCode } pro FIO XML.
+ */
+function parseAccountAny(raw: string): { accountNumber: string; bankCode: string } | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  // CZ format first (rychlejší check)
+  const czParsed = splitBankAccount(trimmed);
+  if (czParsed) return czParsed;
+  // Fallback na IBAN
+  return ibanToAccount(trimmed);
+}
+
 interface PayoutItemInput {
   recipient_type: "buyer" | "seller" | "platform_fee";
   recipient_name?: string | null;
-  recipient_iban?: string | null;
+  recipient_account?: string | null; // CZ formát nebo IBAN
+  recipient_iban?: string | null; // zpětná kompatibilita
   amount_czk: number;
   variable_symbol?: string | null;
   note?: string | null;
@@ -149,10 +166,21 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(amt) || amt < 0) {
       return cors(NextResponse.json({ error: "Neplatná částka v itemu." }, { status: 400 }));
     }
-    if (item.recipient_type !== "platform_fee" && !item.recipient_iban) {
+    const account = item.recipient_account || item.recipient_iban;
+    if (item.recipient_type !== "platform_fee" && !account) {
       return cors(
         NextResponse.json(
-          { error: `Item typu '${item.recipient_type}' musí mít IBAN.` },
+          { error: `Item typu '${item.recipient_type}' musí mít číslo účtu.` },
+          { status: 400 }
+        )
+      );
+    }
+    if (item.recipient_type !== "platform_fee" && account && !parseAccountAny(account)) {
+      return cors(
+        NextResponse.json(
+          {
+            error: `Neplatný formát účtu '${account}'. Použij '1234567890/0100' nebo IBAN CZ...`,
+          },
           { status: 400 }
         )
       );
@@ -175,11 +203,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Vytvoř items v 'pending'
+  // Poznámka: sloupec v DB se jmenuje recipient_iban (kvůli migraci 041), ale akceptujeme i CZ formát.
   const itemsToInsert = items.map((it) => ({
     transaction_id: tx.id,
     recipient_type: it.recipient_type,
     recipient_name: it.recipient_name || null,
-    recipient_iban: it.recipient_iban || null,
+    recipient_iban: it.recipient_account || it.recipient_iban || null,
     amount_czk: it.amount_czk,
     variable_symbol: it.variable_symbol || null,
     note: it.note || null,
@@ -238,13 +267,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Buyer / Seller → FIO převod
-    const targetParsed = ibanToAccount(item.recipient_iban!);
+    const targetParsed = parseAccountAny(item.recipient_iban!);
     if (!targetParsed) {
       await supabase
         .from("dpt_payout_items")
         .update({
           status: "failed",
-          error_message: `Neplatný IBAN: ${item.recipient_iban}`,
+          error_message: `Neplatný formát účtu: ${item.recipient_iban}`,
         })
         .eq("id", item.id);
 

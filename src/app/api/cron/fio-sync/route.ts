@@ -69,7 +69,12 @@ export async function GET(req: NextRequest) {
       const amount = Number(tx.column1?.value); // Částka
       const vs = tx.column5?.value?.toString()?.trim(); // VS
       const date = tx.column0?.value; // Datum
-      const counterAccount = tx.column2?.value; // Protiúčet
+      const counterAccountRaw = tx.column2?.value; // Protiúčet (bez kódu banky)
+      const counterBankCode = tx.column3?.value?.toString()?.trim(); // Kód banky
+      const counterAccount =
+        counterAccountRaw && counterBankCode
+          ? `${counterAccountRaw}/${counterBankCode}`
+          : counterAccountRaw || null;
       const message = tx.column16?.value; // Zpráva pro příjemce
 
       if (!bankTxId || !amount || amount <= 0) continue;
