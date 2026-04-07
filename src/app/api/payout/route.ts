@@ -111,10 +111,35 @@ export async function POST(req: NextRequest) {
 
     if (!fioRes.ok) {
       const errText = await fioRes.text();
+      // Log failed payout
+      await supabase.from("dpt_payout_log").insert({
+        transaction_id: tx.id,
+        transaction_code: tx.transaction_code,
+        amount_czk: payoutAmount,
+        iban: cleanIban,
+        account_name: tx.seller_payout_account_name || null,
+        variable_symbol: vs || null,
+        status: "failed",
+        error_message: `FIO ${fioRes.status}: ${errText.substring(0, 1000)}`,
+        triggered_by: "manual",
+      });
       throw new Error(`FIO import ${fioRes.status}: ${errText}`);
     }
 
     const fioResult = await fioRes.text();
+
+    // Log successful payout
+    await supabase.from("dpt_payout_log").insert({
+      transaction_id: tx.id,
+      transaction_code: tx.transaction_code,
+      amount_czk: payoutAmount,
+      iban: cleanIban,
+      account_name: tx.seller_payout_account_name || null,
+      variable_symbol: vs || null,
+      fio_response: fioResult.substring(0, 2000),
+      status: "sent",
+      triggered_by: "manual",
+    });
 
     // Change status to payout_sent via RPC
     const { error: statusErr } = await supabase.rpc("dpt_change_status", {
