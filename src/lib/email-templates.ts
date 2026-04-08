@@ -132,32 +132,44 @@ function wrapLayout(mp: MarketplaceBranding, bodyHtml: string): string {
     );
 
   return `<!DOCTYPE html>
-<html lang="cs">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;">
-<tr><td align="center" style="padding:24px 16px;">
+<html lang="cs" style="color-scheme:only light;supported-color-schemes:only light;">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="color-scheme" content="only light">
+<meta name="supported-color-schemes" content="only light">
+<style>
+  :root { color-scheme: only light; supported-color-schemes: only light; }
+  body, table, td { background-color:#ffffff !important; }
+  @media (prefers-color-scheme: dark) {
+    body, table, td { background-color:#ffffff !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
+<tr><td align="center" style="padding:24px 16px;background-color:#ffffff;">
 
   <!-- Container -->
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
 
     <!-- Header -->
     <tr>
-      <td style="padding:28px 32px 16px;text-align:center;border-bottom:3px solid ${accent};">
+      <td style="padding:28px 32px 16px;text-align:center;border-bottom:3px solid ${accent};background-color:#ffffff;">
         ${logoHtml}
       </td>
     </tr>
 
     <!-- Body -->
     <tr>
-      <td style="padding:28px 32px 32px;">
+      <td style="padding:28px 32px 32px;background-color:#ffffff;">
         ${bodyHtml}
       </td>
     </tr>
 
     <!-- Footer -->
     <tr>
-      <td style="padding:20px 32px;background-color:#fafafa;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;line-height:1.6;">
+      <td style="padding:20px 32px;background-color:#ffffff;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;line-height:1.6;">
         ${footerLines.join("<br>")}
         <br><span style="color:#9ca3af;">Tento email byl odeslán automaticky systémem Depozitka.</span>
       </td>
