@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCron } from "@/lib/cron-auth";
 import { getSupabase } from "@/lib/supabase";
+import { runFioSync } from "@/lib/jobs/fio-sync";
+import { runProcessEmails } from "@/lib/jobs/process-emails";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,6 +22,12 @@ export async function OPTIONS() {
  * Master orchestrator — runs all cron jobs sequentially.
  * Vercel Hobby tier allows only 1 cron schedule, so this chains them.
  *
+ * IMPORTANT: sub-jobs are invoked as in-process function calls, NOT via HTTP fetch.
+ * The previous HTTP-based approach failed with 401 because the internal Bearer
+ * header relied on process.env.CRON_SECRET being readable in the master function
+ * runtime, which was not always the case (Vercel may inject CRON_SECRET only into
+ * the Vercel-cron-triggered request without exposing it back to user code).
+ *
  * Each job failure doesn't block the next.
  * Audit log goes to dpt_cron_runs (migrace 040).
  */
@@ -31,13 +39,19 @@ export async function POST(req: NextRequest) {
   return runDailyJobs(req, "manual");
 }
 
+type JobName = "fio-sync" | "process-emails";
+interface JobOutcome {
+  ok: boolean;
+  status: number;
+  error?: string;
+}
+type JobRunner = () => Promise<JobOutcome>;
+
 async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<NextResponse> {
   const authError = verifyCron(req);
   if (authError) return cors(authError);
 
   const supabase = getSupabase();
-  const baseUrl = getBaseUrl(req);
-  const cronSecret = process.env.CRON_SECRET || "";
 
   const masterStarted = Date.now();
   const { data: masterRun } = await supabase
@@ -50,10 +64,9 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
     .select("id")
     .single();
 
-  // Pouze existující sub-joby (fio-payout je broken — neptat se).
-  const jobs = [
-    "fio-sync",
-    "process-emails",
+  const jobs: { name: JobName; run: JobRunner }[] = [
+    { name: "fio-sync", run: runFioSync },
+    { name: "process-emails", run: runProcessEmails },
   ];
 
   const results: Record<string, unknown> = {};
@@ -64,7 +77,7 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
     const { data: jobRun } = await supabase
       .from("dpt_cron_runs")
       .insert({
-        job_name: job,
+        job_name: job.name,
         status: "running",
         triggered_by: triggeredBy,
       })
@@ -72,14 +85,9 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
       .single();
 
     try {
-      const res = await fetch(`${baseUrl}/api/cron/${job}`, {
-        headers: {
-          Authorization: `Bearer ${cronSecret}`,
-        },
-      });
-      const body = await res.json().catch(() => ({ body: "non-json" }));
-      const ok = res.ok;
-      results[job] = { status: res.status, ...body };
+      const result = await job.run();
+      const ok = result.ok;
+      results[job.name] = result;
 
       if (jobRun?.id) {
         await supabase
@@ -88,17 +96,19 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
             finished_at: new Date().toISOString(),
             duration_ms: Date.now() - jobStarted,
             status: ok ? "success" : "error",
-            result: body,
-            error_message: ok ? null : `HTTP ${res.status}`,
+            result,
+            error_message: ok
+              ? null
+              : `${typeof result.error === "string" ? result.error : `HTTP ${result.status}`}`,
           })
           .eq("id", jobRun.id);
       }
 
       if (!ok) errorCount++;
     } catch (err) {
-      console.error(`Job ${job} failed:`, err);
+      console.error(`Job ${job.name} failed:`, err);
       const msg = err instanceof Error ? err.message : String(err);
-      results[job] = { status: "error", error: msg };
+      results[job.name] = { status: "error", error: msg };
       errorCount++;
 
       if (jobRun?.id) {
@@ -134,13 +144,6 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
       jobs_run: jobs.length,
       errors: errorCount,
       results,
-    })
+    }),
   );
-}
-
-function getBaseUrl(req: NextRequest): string {
-  // Vercel sets this header
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
 }
