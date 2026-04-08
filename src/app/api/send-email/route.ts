@@ -7,6 +7,7 @@ import {
   type EmailData,
   type MarketplaceBranding,
 } from "@/lib/email-templates";
+import { getOperatorBranding, applyOperatorBranding } from "@/lib/operator-branding";
 
 export const dynamic = "force-dynamic";
 
@@ -222,11 +223,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Marketplace branding
+    // Marketplace branding (overlayed s operátorem)
     let mp: MarketplaceBranding = { code: "unknown", name: "Depozitka" };
     if (tx.marketplace_id) {
       const resolved = await getMarketplaceBranding(tx.marketplace_id);
       if (resolved) mp = resolved;
+    }
+    try {
+      const op = await getOperatorBranding();
+      mp = applyOperatorBranding(mp, op);
+    } catch {
+      // continue with marketplace-only branding
     }
 
     // Escrow account

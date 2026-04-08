@@ -7,6 +7,7 @@ import {
   type EmailData,
   type MarketplaceBranding,
 } from "@/lib/email-templates";
+import { getOperatorBranding, applyOperatorBranding } from "@/lib/operator-branding";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -284,9 +285,11 @@ async function processCoreLogs(batchSize: number): Promise<QueueStats> {
           if (tx?.marketplace_id) {
             // Get or cache marketplace branding
             if (!mpCache.has(tx.marketplace_id)) {
+              const baseMp = await getMarketplaceBranding(tx.marketplace_id);
+              const op = await getOperatorBranding();
               mpCache.set(
                 tx.marketplace_id,
-                await getMarketplaceBranding(tx.marketplace_id),
+                baseMp ? applyOperatorBranding(baseMp, op) : null,
               );
             }
             const mp = mpCache.get(tx.marketplace_id);
