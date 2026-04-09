@@ -17,7 +17,8 @@
 import { supabase } from "@/lib/supabase";
 import { getTransporter } from "@/lib/smtp";
 
-const FIO_API_BASE = process.env.FIO_API_BASE || "https://fioapi.fio.cz/v1/rest";
+export const FIO_API_BASE = process.env.FIO_API_BASE || "https://fioapi.fio.cz/v1/rest";
+export const FIO_SYNC_START_DATE = "2026-04-01";
 
 export interface FioSyncResult {
   ok: boolean;
@@ -45,9 +46,8 @@ export async function runFioSync(): Promise<FioSyncResult> {
   }
 
   try {
-    const FIO_START_DATE = "2026-04-01";
     const today = new Date().toISOString().slice(0, 10);
-    const fioUrl = `${FIO_API_BASE}/periods/${FIO_TOKEN}/${FIO_START_DATE}/${today}/transactions.json`;
+    const fioUrl = `${FIO_API_BASE}/periods/${FIO_TOKEN}/${FIO_SYNC_START_DATE}/${today}/transactions.json`;
     const fioRes = await fetch(fioUrl, {
       headers: { Accept: "application/json" },
     });
