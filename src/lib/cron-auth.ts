@@ -9,15 +9,25 @@ import { NextRequest, NextResponse } from "next/server";
 export function verifyCron(req: NextRequest): NextResponse | null {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : null;
+
+  const expectedManualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN || cronSecret;
 
   // Vercel cron / server-to-server path
-  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+  if (cronSecret && bearerToken === cronSecret) {
     return null;
   }
 
-  // Manual browser trigger path
+  // Manual trigger via Authorization: Bearer <MANUAL_EMAIL_TRIGGER_TOKEN>
+  // (used by Depozitka Core Cron tab)
+  if (expectedManualToken && bearerToken === expectedManualToken) {
+    return null;
+  }
+
+  // Manual browser trigger path via query token
   const manualToken = req.nextUrl.searchParams.get("token");
-  const expectedManualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN || cronSecret;
   if (expectedManualToken && manualToken === expectedManualToken) {
     return null;
   }
