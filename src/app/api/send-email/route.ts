@@ -17,20 +17,27 @@ export const dynamic = "force-dynamic";
 
 function verifyToken(req: NextRequest): NextResponse | null {
   const cronSecret = process.env.CRON_SECRET;
-  const manualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN || cronSecret;
+  const manualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN;
+  const acceptedTokens = [manualToken, cronSecret].filter(
+    (t): t is string => typeof t === "string" && t.trim().length > 0,
+  );
+
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : null;
 
   // Bearer header
-  const authHeader = req.headers.get("authorization");
-  if (manualToken && authHeader === `Bearer ${manualToken}`) return null;
+  if (bearerToken && acceptedTokens.includes(bearerToken)) return null;
 
   // Query param
-  const qToken = req.nextUrl.searchParams.get("token");
-  if (manualToken && qToken === manualToken) return null;
+  const qToken = req.nextUrl.searchParams.get("token")?.trim();
+  if (qToken && acceptedTokens.includes(qToken)) return null;
 
   // Body token (for POST)
   // Will be checked after JSON parse if needed
 
-  if (!manualToken && process.env.NODE_ENV === "development") return null;
+  if (acceptedTokens.length === 0 && process.env.NODE_ENV === "development") return null;
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
@@ -187,8 +194,11 @@ export async function POST(req: NextRequest) {
 
   // Allow token in body as fallback auth
   if (authErr) {
-    const manualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN || process.env.CRON_SECRET;
-    if (manualToken && body.token === manualToken) {
+    const acceptedTokens = [process.env.MANUAL_EMAIL_TRIGGER_TOKEN, process.env.CRON_SECRET].filter(
+      (t): t is string => typeof t === "string" && t.trim().length > 0,
+    );
+    const bodyToken = body.token?.trim();
+    if (bodyToken && acceptedTokens.includes(bodyToken)) {
       // OK, authenticated via body token
     } else {
       return withCors(authErr);
