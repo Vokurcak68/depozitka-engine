@@ -47,31 +47,7 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  // 3. Queue stats from dpt_email_queue (engine)
-  try {
-    const { data: engineStats, error } = await supabase
-      .from("dpt_email_queue")
-      .select("status")
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (error) {
-      diag.engineQueue = { error: error.message };
-    } else {
-      const counts: Record<string, number> = {};
-      for (const row of engineStats || []) {
-        counts[row.status] = (counts[row.status] || 0) + 1;
-      }
-      diag.engineQueue = {
-        total: engineStats?.length || 0,
-        byStatus: counts,
-      };
-    }
-  } catch (err) {
-    diag.engineQueue = {
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+  // 3. (removed) dpt_email_queue — deprecated 2026-04-09, single source = dpt_email_logs
 
   // 4. Last 5 failed emails with error detail
   try {

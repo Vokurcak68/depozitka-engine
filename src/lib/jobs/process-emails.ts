@@ -5,9 +5,14 @@
  *   - /api/cron/process-emails route (HTTP wrapper, manual trigger from Core UI)
  *   - /api/cron/daily-jobs (master orchestrator, in-process call)
  *
- * Processes:
- *   - dpt_email_queue (engine-native: pending/sent/failed)
- *   - dpt_email_logs (core queue/log: queued/sent/failed) — with HTML template rendering
+ * Processes ONLY dpt_email_logs (single source of truth).
+ * Records with status='queued' are picked up, rendered (if they have
+ * transaction_id + template_key), sent via SMTP, and marked 'sent' or 'failed'.
+ *
+ * The old dpt_email_queue table was deprecated on 2026-04-09 — it was a
+ * leftover from earlier iterations and caused split-brain between engine
+ * and core admin UI (which only reads dpt_email_logs). Migration 032
+ * drops that table after porting any residual queued rows over.
  */
 
 import { supabase } from "@/lib/supabase";
@@ -19,16 +24,6 @@ import {
 } from "@/lib/email-templates";
 import { getOperatorBranding, applyOperatorBranding } from "@/lib/operator-branding";
 
-export type QueueStats = {
-  source: "engine_queue" | "core_logs";
-  processed: number;
-  sent: number;
-  failed: number;
-  skipped: boolean;
-  htmlRendered: number;
-  error?: string;
-};
-
 export interface ProcessEmailsResult {
   ok: boolean;
   status: number;
@@ -36,8 +31,6 @@ export interface ProcessEmailsResult {
   sent: number;
   failed: number;
   htmlRendered: number;
-  engine?: QueueStats;
-  core?: QueueStats;
   error?: string;
 }
 
@@ -148,237 +141,31 @@ function buildEmailData(tx: any, mp: MarketplaceBranding, escrow: EscrowAccount)
 }
 
 // ---------------------------------------------------------------------------
-// Process engine-native queue (dpt_email_queue)
-// ---------------------------------------------------------------------------
-
-async function processEngineQueue(batchSize: number): Promise<QueueStats> {
-  const stats: QueueStats = {
-    source: "engine_queue",
-    processed: 0,
-    sent: 0,
-    failed: 0,
-    skipped: false,
-    htmlRendered: 0,
-  };
-
-  const { data: emails, error: fetchError } = await supabase
-    .from("dpt_email_queue")
-    .select(
-      "id, to_email, subject, html_body, text_body, status, attempts, created_at",
-    )
-    .eq("status", "pending")
-    .lt("attempts", 3)
-    .order("created_at", { ascending: true })
-    .limit(batchSize);
-
-  if (fetchError) {
-    stats.error = fetchError.message;
-    return stats;
-  }
-
-  if (!emails || emails.length === 0) {
-    return stats;
-  }
-
-  const transporter = getTransporter();
-
-  for (const email of emails) {
-    try {
-      await transporter.sendMail({
-        from: SMTP_FROM,
-        to: email.to_email,
-        subject: email.subject,
-        html: email.html_body || undefined,
-        text: email.text_body || undefined,
-      });
-
-      await supabase
-        .from("dpt_email_queue")
-        .update({
-          status: "sent",
-          sent_at: new Date().toISOString(),
-          attempts: email.attempts + 1,
-          last_error: null,
-        })
-        .eq("id", email.id);
-
-      stats.sent++;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Failed to send engine email ${email.id}:`, errorMsg);
-
-      await supabase
-        .from("dpt_email_queue")
-        .update({
-          status: email.attempts + 1 >= 3 ? "failed" : "pending",
-          attempts: email.attempts + 1,
-          last_error: errorMsg,
-        })
-        .eq("id", email.id);
-
-      stats.failed++;
-    }
-  }
-
-  stats.processed = emails.length;
-  return stats;
-}
-
-// ---------------------------------------------------------------------------
-// Process core email logs (dpt_email_logs) — with HTML template rendering
-// ---------------------------------------------------------------------------
-
-async function processCoreLogs(batchSize: number): Promise<QueueStats> {
-  const stats: QueueStats = {
-    source: "core_logs",
-    processed: 0,
-    sent: 0,
-    failed: 0,
-    skipped: false,
-    htmlRendered: 0,
-  };
-
-  const { data: emails, error: fetchError } = await supabase
-    .from("dpt_email_logs")
-    .select(
-      "id, transaction_id, template_key, to_email, subject, body_preview, status, created_at",
-    )
-    .eq("status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(batchSize);
-
-  if (fetchError) {
-    stats.skipped = true;
-    stats.error = fetchError.message;
-    return stats;
-  }
-
-  if (!emails || emails.length === 0) {
-    return stats;
-  }
-
-  let escrow: EscrowAccount = {};
-  try {
-    escrow = await getEscrowAccount();
-  } catch (e) {
-    console.warn("Failed to fetch escrow account, continuing with empty:", e);
-  }
-
-  const mpCache = new Map<string, MarketplaceBranding | null>();
-
-  let transporter;
-  try {
-    transporter = getTransporter();
-  } catch (e) {
-    stats.error = `SMTP init failed: ${e instanceof Error ? e.message : String(e)}`;
-    for (const email of emails) {
-      await supabase
-        .from("dpt_email_logs")
-        .update({ status: "failed", error_message: stats.error })
-        .eq("id", email.id);
-      stats.failed++;
-    }
-    stats.processed = emails.length;
-    return stats;
-  }
-
-  for (const email of emails) {
-    try {
-      let finalSubject = email.subject;
-      let finalHtml: string | undefined;
-      let finalText: string | undefined = email.body_preview || undefined;
-
-      if (email.transaction_id && email.template_key) {
-        try {
-          const { data: tx } = await supabase
-            .from("dpt_transactions")
-            .select("*")
-            .eq("id", email.transaction_id)
-            .single();
-
-          if (tx?.marketplace_id) {
-            if (!mpCache.has(tx.marketplace_id)) {
-              const baseMp = await getMarketplaceBranding(tx.marketplace_id);
-              const op = await getOperatorBranding();
-              mpCache.set(
-                tx.marketplace_id,
-                baseMp ? applyOperatorBranding(baseMp, op) : null,
-              );
-            }
-            const mp = mpCache.get(tx.marketplace_id);
-
-            if (mp) {
-              const emailData = buildEmailData(tx, mp, escrow);
-              const rendered = renderTemplate(email.template_key, emailData);
-
-              if (rendered) {
-                finalSubject = rendered.subject;
-                finalHtml = rendered.html;
-                finalText = rendered.text;
-                stats.htmlRendered++;
-              }
-            }
-          }
-        } catch (renderErr) {
-          console.warn(
-            `Template render failed for ${email.id} (${email.template_key}):`,
-            renderErr instanceof Error ? renderErr.message : renderErr,
-          );
-        }
-      }
-
-      const info = await transporter.sendMail({
-        from: SMTP_FROM,
-        to: email.to_email,
-        subject: finalSubject,
-        html: finalHtml,
-        text: finalText,
-      });
-
-      await supabase
-        .from("dpt_email_logs")
-        .update({
-          status: "sent",
-          sent_at: new Date().toISOString(),
-          provider: "smtp",
-          provider_message_id: info?.messageId || null,
-          error_message: null,
-        })
-        .eq("id", email.id);
-
-      stats.sent++;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Failed to send core email ${email.id}:`, errorMsg);
-
-      await supabase
-        .from("dpt_email_logs")
-        .update({
-          status: "failed",
-          error_message: errorMsg,
-        })
-        .eq("id", email.id);
-
-      stats.failed++;
-    }
-  }
-
-  stats.processed = emails.length;
-  return stats;
-}
-
-// ---------------------------------------------------------------------------
-// Main entry
+// Main entry — processes dpt_email_logs with status='queued'
 // ---------------------------------------------------------------------------
 
 export async function runProcessEmails(): Promise<ProcessEmailsResult> {
   const BATCH_SIZE = 20;
+  const result: ProcessEmailsResult = {
+    ok: true,
+    status: 200,
+    processed: 0,
+    sent: 0,
+    failed: 0,
+    htmlRendered: 0,
+  };
 
   try {
-    const engine = await processEngineQueue(BATCH_SIZE);
-    const core = await processCoreLogs(BATCH_SIZE);
+    const { data: emails, error: fetchError } = await supabase
+      .from("dpt_email_logs")
+      .select(
+        "id, transaction_id, template_key, to_email, subject, body_preview, status, created_at",
+      )
+      .eq("status", "queued")
+      .order("created_at", { ascending: true })
+      .limit(BATCH_SIZE);
 
-    if (engine.error && !engine.processed && !core.processed && core.skipped) {
+    if (fetchError) {
       return {
         ok: false,
         status: 500,
@@ -386,22 +173,135 @@ export async function runProcessEmails(): Promise<ProcessEmailsResult> {
         sent: 0,
         failed: 0,
         htmlRendered: 0,
-        error: `Queue fetch failed: ${engine.error}`,
+        error: `Queue fetch failed: ${fetchError.message}`,
       };
     }
 
-    return {
-      ok: true,
-      status: 200,
-      processed: engine.processed + core.processed,
-      sent: engine.sent + core.sent,
-      failed: engine.failed + core.failed,
-      htmlRendered: core.htmlRendered,
-      engine,
-      core,
-    };
+    if (!emails || emails.length === 0) {
+      return result;
+    }
+
+    // Preload escrow account (for QR payment blocks in templates)
+    let escrow: EscrowAccount = {};
+    try {
+      escrow = await getEscrowAccount();
+    } catch (e) {
+      console.warn("Failed to fetch escrow account, continuing with empty:", e);
+    }
+
+    // Marketplace branding cache (key = marketplace_id)
+    const mpCache = new Map<string, MarketplaceBranding | null>();
+
+    // SMTP transporter — fail loudly if it can't initialize
+    let transporter;
+    try {
+      transporter = getTransporter();
+    } catch (e) {
+      const errMsg = `SMTP init failed: ${e instanceof Error ? e.message : String(e)}`;
+      // Mark whole batch as failed so they're not retried endlessly without info
+      for (const email of emails) {
+        await supabase
+          .from("dpt_email_logs")
+          .update({ status: "failed", error_message: errMsg })
+          .eq("id", email.id);
+        result.failed++;
+      }
+      result.processed = emails.length;
+      result.ok = false;
+      result.status = 500;
+      result.error = errMsg;
+      return result;
+    }
+
+    for (const email of emails) {
+      try {
+        let finalSubject = email.subject;
+        let finalHtml: string | undefined;
+        let finalText: string | undefined = email.body_preview || undefined;
+
+        if (email.transaction_id && email.template_key) {
+          try {
+            const { data: tx } = await supabase
+              .from("dpt_transactions")
+              .select("*")
+              .eq("id", email.transaction_id)
+              .single();
+
+            if (tx?.marketplace_id) {
+              if (!mpCache.has(tx.marketplace_id)) {
+                const baseMp = await getMarketplaceBranding(tx.marketplace_id);
+                const op = await getOperatorBranding();
+                mpCache.set(
+                  tx.marketplace_id,
+                  baseMp ? applyOperatorBranding(baseMp, op) : null,
+                );
+              }
+              const mp = mpCache.get(tx.marketplace_id);
+
+              if (mp) {
+                const emailData = buildEmailData(tx, mp, escrow);
+                const rendered = renderTemplate(email.template_key, emailData);
+
+                if (rendered) {
+                  finalSubject = rendered.subject;
+                  finalHtml = rendered.html;
+                  finalText = rendered.text;
+                  result.htmlRendered++;
+                }
+              }
+            }
+          } catch (renderErr) {
+            console.warn(
+              `Template render failed for ${email.id} (${email.template_key}):`,
+              renderErr instanceof Error ? renderErr.message : renderErr,
+            );
+          }
+        }
+
+        const info = await transporter.sendMail({
+          from: SMTP_FROM,
+          to: email.to_email,
+          subject: finalSubject,
+          html: finalHtml,
+          text: finalText,
+        });
+
+        await supabase
+          .from("dpt_email_logs")
+          .update({
+            status: "sent",
+            sent_at: new Date().toISOString(),
+            provider: "smtp",
+            provider_message_id: info?.messageId || null,
+            error_message: null,
+          })
+          .eq("id", email.id);
+
+        result.sent++;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error(`Failed to send email log ${email.id}:`, errorMsg);
+
+        await supabase
+          .from("dpt_email_logs")
+          .update({
+            status: "failed",
+            error_message: errorMsg,
+          })
+          .eq("id", email.id);
+
+        result.failed++;
+      }
+    }
+
+    result.processed = emails.length;
+    if (result.failed > 0 && result.sent === 0) {
+      result.ok = false;
+      result.status = 500;
+    }
+    return result;
   } catch (err) {
-    console.error("process-emails error:", err);
+    console.error("process-emails fatal error:", err);
     return {
       ok: false,
       status: 500,
