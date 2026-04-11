@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { verifyCron } from "@/lib/cron-auth";
+import { loadCronSettings, normalizeTimes } from "@/lib/jobs/daily-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +27,21 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabase();
 
-  // Configured crons (from vercel.json)
+  const cronSettings = await loadCronSettings();
+  const slots = normalizeTimes(cronSettings.dailyJobsTimesUtc);
+
+  // Configured crons (from db + vercel wiring)
   const configured = [
     {
       name: "daily-jobs",
       path: "/api/cron/daily-jobs",
-      schedule: "0 8 * * *",
-      description: "Master job: fio-sync → expire-unpaid → shipping/delivery reminders → auto-complete",
-      runs: ["fio-sync", "expire-unpaid", "shipping-reminder", "expire-unshipped", "delivery-reminder", "auto-complete"],
+      schedulesUtc: slots,
+      schedulesCron: slots.map((t) => {
+        const [h, m] = t.split(":");
+        return `${m} ${h} * * *`;
+      }),
+      description: "Master job: fio-sync + process-emails",
+      runs: ["fio-sync", "process-emails"],
     },
   ];
 

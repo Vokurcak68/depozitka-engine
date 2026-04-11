@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCron } from "@/lib/cron-auth";
-import { getSupabase } from "@/lib/supabase";
-import { runFioSync } from "@/lib/jobs/fio-sync";
-import { runProcessEmails } from "@/lib/jobs/process-emails";
+import {
+  alreadyRanSlotToday,
+  executeDailyJobs,
+  getUtcTimeParts,
+  loadCronSettings,
+  normalizeTimes,
+} from "@/lib/jobs/daily-jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,111 +43,46 @@ export async function POST(req: NextRequest) {
   return runDailyJobs(req, "manual");
 }
 
-type JobName = "fio-sync" | "process-emails";
-interface JobOutcome {
-  ok: boolean;
-  status: number;
-  error?: string;
-}
-type JobRunner = () => Promise<JobOutcome>;
-
 async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<NextResponse> {
   const authError = verifyCron(req);
   if (authError) return cors(authError);
 
-  const supabase = getSupabase();
+  // Pro scheduled běh si ověříme sloty z dpt_settings.cron.dailyJobsTimesUtc.
+  // Vercel umí mít víc cron entries se stejnou path; tenhle guard zajistí,
+  // že job poběží jen v nakonfigurovaných časech a max jednou per slot/den.
+  if (triggeredBy === "vercel_cron") {
+    const settings = await loadCronSettings();
+    const slots = normalizeTimes(settings.dailyJobsTimesUtc);
+    const { hhmm, dayStartIso, dayEndIso } = getUtcTimeParts();
 
-  const masterStarted = Date.now();
-  const { data: masterRun } = await supabase
-    .from("dpt_cron_runs")
-    .insert({
-      job_name: "daily-jobs",
-      status: "running",
-      triggered_by: triggeredBy,
-    })
-    .select("id")
-    .single();
-
-  const jobs: { name: JobName; run: JobRunner }[] = [
-    { name: "fio-sync", run: runFioSync },
-    { name: "process-emails", run: runProcessEmails },
-  ];
-
-  const results: Record<string, unknown> = {};
-  let errorCount = 0;
-
-  for (const job of jobs) {
-    const jobStarted = Date.now();
-    const { data: jobRun } = await supabase
-      .from("dpt_cron_runs")
-      .insert({
-        job_name: job.name,
-        status: "running",
-        triggered_by: triggeredBy,
-      })
-      .select("id")
-      .single();
-
-    try {
-      const result = await job.run();
-      const ok = result.ok;
-      results[job.name] = result;
-
-      if (jobRun?.id) {
-        await supabase
-          .from("dpt_cron_runs")
-          .update({
-            finished_at: new Date().toISOString(),
-            duration_ms: Date.now() - jobStarted,
-            status: ok ? "success" : "error",
-            result,
-            error_message: ok
-              ? null
-              : `${typeof result.error === "string" ? result.error : `HTTP ${result.status}`}`,
-          })
-          .eq("id", jobRun.id);
-      }
-
-      if (!ok) errorCount++;
-    } catch (err) {
-      console.error(`Job ${job.name} failed:`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      results[job.name] = { status: "error", error: msg };
-      errorCount++;
-
-      if (jobRun?.id) {
-        await supabase
-          .from("dpt_cron_runs")
-          .update({
-            finished_at: new Date().toISOString(),
-            duration_ms: Date.now() - jobStarted,
-            status: "error",
-            error_message: msg,
-          })
-          .eq("id", jobRun.id);
-      }
+    if (!slots.includes(hhmm)) {
+      return cors(
+        NextResponse.json({
+          ok: true,
+          skipped: true,
+          reason: `Current UTC time ${hhmm} is not in configured slots`,
+          configuredSlotsUtc: slots,
+        }),
+      );
     }
+
+    const slotTriggeredBy = `vercel_cron@${hhmm}`;
+    const duplicate = await alreadyRanSlotToday(slotTriggeredBy, dayStartIso, dayEndIso);
+    if (duplicate) {
+      return cors(
+        NextResponse.json({
+          ok: true,
+          skipped: true,
+          reason: `Slot ${hhmm} already executed today`,
+          configuredSlotsUtc: slots,
+        }),
+      );
+    }
+
+    const result = await executeDailyJobs(slotTriggeredBy);
+    return cors(NextResponse.json(result));
   }
 
-  if (masterRun?.id) {
-    await supabase
-      .from("dpt_cron_runs")
-      .update({
-        finished_at: new Date().toISOString(),
-        duration_ms: Date.now() - masterStarted,
-        status: errorCount === 0 ? "success" : "error",
-        result: { jobs_run: jobs.length, errors: errorCount, results },
-      })
-      .eq("id", masterRun.id);
-  }
-
-  return cors(
-    NextResponse.json({
-      ok: errorCount === 0,
-      ran_at: new Date().toISOString(),
-      jobs_run: jobs.length,
-      errors: errorCount,
-      results,
-    }),
-  );
+  const result = await executeDailyJobs(triggeredBy);
+  return cors(NextResponse.json(result));
 }
