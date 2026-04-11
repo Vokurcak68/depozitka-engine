@@ -129,6 +129,17 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
     return cors(NextResponse.json({ ...result, monitoring }));
   }
 
+  const monitorOnly = req.nextUrl.searchParams.get("monitorOnly") === "1";
+  if (triggeredBy === "manual" && monitorOnly) {
+    return cors(
+      NextResponse.json({
+        ok: true,
+        mode: "monitor_only",
+        monitoring,
+      }),
+    );
+  }
+
   const result = await executeDailyJobs(triggeredBy);
   return cors(NextResponse.json(result));
 }
