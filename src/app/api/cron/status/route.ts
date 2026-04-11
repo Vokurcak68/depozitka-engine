@@ -40,8 +40,16 @@ export async function GET(req: NextRequest) {
         const [h, m] = t.split(":");
         return `${m} ${h} * * *`;
       }),
-      description: "Master job: monitoring (každých 5 min) + fio-sync + process-emails (ve slotech)",
-      runs: ["monitoring", "fio-sync", "process-emails"],
+      description: "Master job: fio-sync + process-emails (ve slotech)",
+      runs: ["fio-sync", "process-emails"],
+    },
+    {
+      name: "monitoring",
+      path: "/api/cron/monitoring",
+      schedulesUtc: [],
+      schedulesCron: [],
+      description: "On-demand endpoint pro externí 5min trigger (UptimeRobot/BetterStack)",
+      runs: ["monitoring"],
     },
   ];
 
