@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
         const [h, m] = t.split(":");
         return `${m} ${h} * * *`;
       }),
-      description: "Master job: fio-sync + process-emails",
-      runs: ["fio-sync", "process-emails"],
+      description: "Master job: monitoring (každých 5 min) + fio-sync + process-emails (ve slotech)",
+      runs: ["monitoring", "fio-sync", "process-emails"],
     },
   ];
 
