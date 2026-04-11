@@ -76,7 +76,7 @@ export async function GET() {
       name: t.name,
       url: t.url,
       severity: t.severity,
-      status: open ? "incident" : last?.ok ? "operational" : "degraded",
+      status: open ? "incident" : !last ? "unknown" : last.ok ? "operational" : "degraded",
       lastCheck: last,
       openIncident: open,
     };
@@ -86,7 +86,9 @@ export async function GET() {
     ? "major_outage"
     : items.some((i) => i.status === "degraded")
       ? "degraded"
-      : "operational";
+      : items.some((i) => i.status === "unknown")
+        ? "unknown"
+        : "operational";
 
   return cors(
     NextResponse.json({

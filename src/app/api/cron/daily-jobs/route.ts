@@ -51,13 +51,13 @@ async function runDailyJobs(req: NextRequest, triggeredBy: string): Promise<Next
 
   const supabase = getSupabase();
 
-  // Monitoring běží při každém vercel cron ticku (*/5), nezávisle na daily slotu.
+  // Monitoring běží při každém cron ticku a i při manuálním triggeru.
   let monitoring: unknown = null;
-  if (triggeredBy === "vercel_cron") {
+  if (triggeredBy === "vercel_cron" || triggeredBy === "manual") {
     const monStarted = Date.now();
     const { data: monRun } = await supabase
       .from("dpt_cron_runs")
-      .insert({ job_name: "monitoring", status: "running", triggered_by: "vercel_cron" })
+      .insert({ job_name: "monitoring", status: "running", triggered_by: triggeredBy })
       .select("id")
       .single();
 
