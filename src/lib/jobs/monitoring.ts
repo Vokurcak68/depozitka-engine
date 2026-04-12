@@ -130,12 +130,54 @@ async function sendAlertEmail(to: string[], subject: string, text: string): Prom
   }
 }
 
+const STATUS_PAGE_URL = (process.env.STATUS_PUBLIC_URL || "https://status.depozitka.eu").trim();
+const CORE_URL = (process.env.CORE_PUBLIC_URL || "https://core.depozitka.eu").trim();
+const ENGINE_URL = (process.env.ENGINE_PUBLIC_URL || "https://engine.depozitka.eu").trim();
+
+function inferComponent(target: Pick<MonitorTarget, "code" | "url">): "core" | "engine" | "unknown" {
+  const code = (target.code || "").toLowerCase();
+  const url = (target.url || "").toLowerCase();
+
+  if (code.startsWith("core") || url.includes("core.depozitka.eu")) return "core";
+  if (code.startsWith("engine") || url.includes("engine.depozitka.eu") || url.includes("depozitka-engine")) return "engine";
+  return "unknown";
+}
+
+interface MonitorState {
+  fioSyncLastAlertRunId?: string | null;
+}
+
+async function loadMonitorState(supabase: ReturnType<typeof getSupabase>): Promise<MonitorState> {
+  const { data } = await supabase
+    .from("dpt_settings")
+    .select("value")
+    .eq("key", "monitoring_state")
+    .maybeSingle();
+
+  return (data?.value || {}) as MonitorState;
+}
+
+async function saveMonitorState(supabase: ReturnType<typeof getSupabase>, state: MonitorState): Promise<void> {
+  await supabase
+    .from("dpt_settings")
+    .upsert(
+      {
+        key: "monitoring_state",
+        value: state,
+        description: "Interní stav monitoringu (deduplikace alertů)",
+      },
+      { onConflict: "key" },
+    );
+}
+
 async function sendAlertPushover(
   userKeys: string[],
   title: string,
   message: string,
   priority = 1,
   sound?: string,
+  url?: string,
+  urlTitle?: string,
 ): Promise<boolean> {
   const appToken = (process.env.PUSHOVER_APP_TOKEN || "").trim();
   if (!appToken || userKeys.length === 0) return false;
@@ -153,6 +195,8 @@ async function sendAlertPushover(
       });
 
       if (sound) body.set("sound", sound);
+      if (url) body.set("url", url);
+      if (urlTitle) body.set("url_title", urlTitle);
 
       const res = await fetch("https://api.pushover.net/1/messages.json", {
         method: "POST",
@@ -185,6 +229,7 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
   let alertsSent = 0;
 
   const settings = await loadMonitorSettings();
+  const state = await loadMonitorState(supabase);
   const alertEmails = uniqueEmails([
     ...(Array.isArray(settings.alertEmails) ? settings.alertEmails : []),
     process.env.ADMIN_EMAIL,
@@ -219,6 +264,51 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
       alertsSent: 0,
       errors: [targetsErr.message],
     };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // Job-level monitoring: FIO sync should not fail twice in a row
+  // We alert based on dpt_cron_runs (job_name='fio-sync').
+  // ─────────────────────────────────────────────────────────
+  try {
+    const { data: fioRuns } = await supabase
+      .from("dpt_cron_runs")
+      .select("id, status, started_at, error_message")
+      .eq("job_name", "fio-sync")
+      .order("started_at", { ascending: false })
+      .limit(2);
+
+    const lastTwo = (fioRuns || []) as { id: string; status: string; started_at: string; error_message: string | null }[];
+    const twoErrors = lastTwo.length >= 2 && lastTwo[0].status === "error" && lastTwo[1].status === "error";
+
+    if (twoErrors) {
+      const latestId = lastTwo[0].id;
+      const alreadyAlerted = state.fioSyncLastAlertRunId && state.fioSyncLastAlertRunId === latestId;
+
+      if (!alreadyAlerted) {
+        const subject = "🚨 Depozitka: FIO sync selhal 2× za sebou";
+        const text = [
+          "Job: fio-sync",
+          `Latest run: ${lastTwo[0].started_at}`,
+          `Error: ${lastTwo[0].error_message || "(no error_message)"}`,
+          `Engine: ${ENGINE_URL}`,
+          `Core: ${CORE_URL}`,
+        ].join("\n");
+
+        const emailSent = await sendAlertEmail(alertEmails, subject, text);
+        const pushSent = pushoverEnabled
+          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound, ENGINE_URL, "Engine")
+          : false;
+
+        if (emailSent || pushSent) {
+          alertsSent++;
+          state.fioSyncLastAlertRunId = latestId;
+          await saveMonitorState(supabase, state);
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`fio-sync monitor failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   for (const target of (targets || []) as MonitorTarget[]) {
@@ -286,9 +376,15 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
       } else {
         openedIncidents++;
         const subject = `🚨 Depozitka monitoring: incident OPEN (${target.name})`;
+        const component = inferComponent(target);
+        const urlTitle = component === "core" ? "Core" : component === "engine" ? "Engine" : "Status";
+        const linkUrl = component === "core" ? CORE_URL : component === "engine" ? ENGINE_URL : STATUS_PAGE_URL;
+
         const text = [
+          `Component: ${component === "core" ? "Depozitka Core" : component === "engine" ? "Depozitka Engine" : "Unknown"}`,
           `Target: ${target.name}`,
           `URL: ${target.url}`,
+          `Status page: ${STATUS_PAGE_URL}`,
           `Severity: ${target.severity}`,
           `Reason: ${reason}`,
           `Time: ${new Date().toISOString()}`,
@@ -296,7 +392,15 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
 
         const emailSent = await sendAlertEmail(alertEmails, subject, text);
         const pushSent = pushoverEnabled
-          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          ? await sendAlertPushover(
+              pushoverUserKeys,
+              subject,
+              text,
+              pushoverPriority,
+              pushoverSound,
+              linkUrl,
+              urlTitle,
+            )
           : false;
 
         if (emailSent || pushSent) {
@@ -329,16 +433,30 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
       } else {
         closedIncidents++;
         const subject = `✅ Depozitka monitoring: incident RESOLVED (${target.name})`;
+        const component = inferComponent(target);
+        const urlTitle = component === "core" ? "Core" : component === "engine" ? "Engine" : "Status";
+        const linkUrl = component === "core" ? CORE_URL : component === "engine" ? ENGINE_URL : STATUS_PAGE_URL;
+
         const text = [
+          `Component: ${component === "core" ? "Depozitka Core" : component === "engine" ? "Depozitka Engine" : "Unknown"}`,
           `Target: ${target.name}`,
           `URL: ${target.url}`,
+          `Status page: ${STATUS_PAGE_URL}`,
           `Reason: ${reason}`,
           `Time: ${new Date().toISOString()}`,
         ].join("\n");
 
         const emailSent = await sendAlertEmail(alertEmails, subject, text);
         const pushSent = pushoverEnabled
-          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          ? await sendAlertPushover(
+              pushoverUserKeys,
+              subject,
+              text,
+              pushoverPriority,
+              pushoverSound,
+              linkUrl,
+              urlTitle,
+            )
           : false;
 
         if (emailSent || pushSent) alertsSent++;
@@ -355,9 +473,15 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
 
       if (due) {
         const subject = `⏱️ Depozitka monitoring: incident trvá (${target.name})`;
+        const component = inferComponent(target);
+        const urlTitle = component === "core" ? "Core" : component === "engine" ? "Engine" : "Status";
+        const linkUrl = component === "core" ? CORE_URL : component === "engine" ? ENGINE_URL : STATUS_PAGE_URL;
+
         const text = [
+          `Component: ${component === "core" ? "Depozitka Core" : component === "engine" ? "Depozitka Engine" : "Unknown"}`,
           `Target: ${target.name}`,
           `URL: ${target.url}`,
+          `Status page: ${STATUS_PAGE_URL}`,
           `Open since: ${openIncident.opened_at}`,
           `Last status: ${probe.statusCode ?? "ERR"}`,
           `Time: ${new Date().toISOString()}`,
@@ -365,7 +489,15 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
 
         const emailSent = await sendAlertEmail(alertEmails, subject, text);
         const pushSent = pushoverEnabled
-          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          ? await sendAlertPushover(
+              pushoverUserKeys,
+              subject,
+              text,
+              pushoverPriority,
+              pushoverSound,
+              linkUrl,
+              urlTitle,
+            )
           : false;
 
         if (emailSent || pushSent) {
