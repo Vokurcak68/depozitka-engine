@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { corsHeaders, getRequestIp, hashIp, randomId, hashToken } from "@/lib/support";
+import { sendSupportEmails } from "@/lib/support-email";
 
 export const runtime = "nodejs";
 
@@ -106,13 +107,40 @@ export async function POST(req: Request) {
 
   const ticketId = data.id as string;
   const ticketNo = data.ticket_no as number;
+  const ticketCode = `DPT-${ticketNo}`;
+
+  // Fire-and-forget-ish: attempt to send email, but don't fail the whole request if SMTP hiccups.
+  try {
+    const bodyText = [
+      `Ticket: ${ticketCode}`,
+      `Email: ${email}`,
+      body.name ? `Jméno: ${body.name}` : null,
+      body.category ? `Kategorie: ${body.category}` : null,
+      body.pageUrl ? `URL: ${body.pageUrl}` : null,
+      body.transactionRef ? `Reference: ${body.transactionRef}` : null,
+      ``,
+      `Zpráva:`,
+      message,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await sendSupportEmails({
+      ticketCode,
+      toUserEmail: email,
+      subject,
+      bodyText,
+    });
+  } catch {
+    // ignore
+  }
 
   return json(
     200,
     {
       ticketId,
       ticketNo,
-      ticketCode: `DPT-${ticketNo}`,
+      ticketCode,
       uploadToken,
       uploadTokenExpiresAt,
     },
