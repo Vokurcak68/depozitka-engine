@@ -1,5 +1,12 @@
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
 
+function splitEmails(v: string | undefined): string[] {
+  return (v || "")
+    .split(/[\n,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export async function sendSupportEmails(params: {
   ticketCode: string;
   toUserEmail: string;
@@ -12,6 +19,8 @@ export async function sendSupportEmails(params: {
     return { ok: false, error: "Missing SUPPORT_EMAIL_TO" };
   }
 
+  const ccList = splitEmails(process.env.SUPPORT_EMAIL_CC).join(", ") || undefined;
+
   const transporter = getTransporter();
 
   const adminSubject = `[${params.ticketCode}] ${params.subject}`;
@@ -23,6 +32,7 @@ export async function sendSupportEmails(params: {
     await transporter.sendMail({
       from: SMTP_FROM,
       to: supportTo,
+      cc: ccList,
       replyTo: params.toUserEmail,
       subject: adminSubject,
       text: base,
