@@ -51,6 +51,14 @@ export async function GET(req: NextRequest) {
       description: "On-demand endpoint pro externí 5min trigger (UptimeRobot/BetterStack)",
       runs: ["monitoring"],
     },
+    {
+      name: "external-daily-jobs",
+      path: "/api/cron/external-daily-jobs",
+      schedulesUtc: [],
+      schedulesCron: [],
+      description: "On-demand endpoint pro externí trigger fio-sync + process-emails",
+      runs: ["daily-jobs", "fio-sync", "process-emails"],
+    },
   ];
 
   // Fetch last runs
