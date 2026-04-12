@@ -42,6 +42,10 @@ export interface MonitoringResult {
 interface MonitorSettings {
   alertEmails?: string[];
   reminderMinutes?: number;
+  pushoverEnabled?: boolean;
+  pushoverUserKeys?: string[];
+  pushoverPriority?: number;
+  pushoverSound?: string;
 }
 
 const DEFAULT_REMINDER_MINUTES = 60;
@@ -50,6 +54,13 @@ function uniqueEmails(values: (string | undefined | null)[]): string[] {
   const out = values
     .map((v) => (typeof v === "string" ? v.trim().toLowerCase() : ""))
     .filter((v) => v.includes("@"));
+  return Array.from(new Set(out));
+}
+
+function uniquePushoverUsers(values: (string | undefined | null)[]): string[] {
+  const out = values
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => /^[A-Za-z0-9]{20,}$/.test(v));
   return Array.from(new Set(out));
 }
 
@@ -119,6 +130,50 @@ async function sendAlertEmail(to: string[], subject: string, text: string): Prom
   }
 }
 
+async function sendAlertPushover(
+  userKeys: string[],
+  title: string,
+  message: string,
+  priority = 1,
+  sound?: string,
+): Promise<boolean> {
+  const appToken = (process.env.PUSHOVER_APP_TOKEN || "").trim();
+  if (!appToken || userKeys.length === 0) return false;
+
+  let anySent = false;
+
+  for (const user of userKeys) {
+    try {
+      const body = new URLSearchParams({
+        token: appToken,
+        user,
+        title,
+        message,
+        priority: String(priority),
+      });
+
+      if (sound) body.set("sound", sound);
+
+      const res = await fetch("https://api.pushover.net/1/messages.json", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+
+      if (res.ok) {
+        anySent = true;
+      } else {
+        const payload = await res.text().catch(() => "");
+        console.error("Monitoring pushover failed:", res.status, payload);
+      }
+    } catch (err) {
+      console.error("Monitoring pushover failed:", err);
+    }
+  }
+
+  return anySent;
+}
+
 export async function runMonitoringChecks(): Promise<MonitoringResult> {
   const supabase = getSupabase();
   const errors: string[] = [];
@@ -136,6 +191,15 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
     process.env.SMTP_USER,
   ]);
   const reminderMinutes = Number(settings.reminderMinutes || DEFAULT_REMINDER_MINUTES);
+  const pushoverEnabled = settings.pushoverEnabled === true;
+  const pushoverUserKeys = uniquePushoverUsers([
+    ...(Array.isArray(settings.pushoverUserKeys) ? settings.pushoverUserKeys : []),
+    process.env.PUSHOVER_USER_KEY,
+  ]);
+  const pushoverPriority = Number.isFinite(Number(settings.pushoverPriority))
+    ? Number(settings.pushoverPriority)
+    : 1;
+  const pushoverSound = typeof settings.pushoverSound === "string" ? settings.pushoverSound.trim() : "";
 
   const { data: targets, error: targetsErr } = await supabase
     .from("dpt_monitor_targets")
@@ -221,19 +285,21 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
         errors.push(`${target.code}: failed to open incident (${openErr.message})`);
       } else {
         openedIncidents++;
-        const sent = await sendAlertEmail(
-          alertEmails,
-          `🚨 Depozitka monitoring: incident OPEN (${target.name})`,
-          [
-            `Target: ${target.name}`,
-            `URL: ${target.url}`,
-            `Severity: ${target.severity}`,
-            `Reason: ${reason}`,
-            `Time: ${new Date().toISOString()}`,
-          ].join("\n"),
-        );
+        const subject = `🚨 Depozitka monitoring: incident OPEN (${target.name})`;
+        const text = [
+          `Target: ${target.name}`,
+          `URL: ${target.url}`,
+          `Severity: ${target.severity}`,
+          `Reason: ${reason}`,
+          `Time: ${new Date().toISOString()}`,
+        ].join("\n");
 
-        if (sent) {
+        const emailSent = await sendAlertEmail(alertEmails, subject, text);
+        const pushSent = pushoverEnabled
+          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          : false;
+
+        if (emailSent || pushSent) {
           alertsSent++;
           await supabase
             .from("dpt_monitor_incidents")
@@ -262,17 +328,20 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
         errors.push(`${target.code}: failed to close incident (${closeErr.message})`);
       } else {
         closedIncidents++;
-        const sent = await sendAlertEmail(
-          alertEmails,
-          `✅ Depozitka monitoring: incident RESOLVED (${target.name})`,
-          [
-            `Target: ${target.name}`,
-            `URL: ${target.url}`,
-            `Reason: ${reason}`,
-            `Time: ${new Date().toISOString()}`,
-          ].join("\n"),
-        );
-        if (sent) alertsSent++;
+        const subject = `✅ Depozitka monitoring: incident RESOLVED (${target.name})`;
+        const text = [
+          `Target: ${target.name}`,
+          `URL: ${target.url}`,
+          `Reason: ${reason}`,
+          `Time: ${new Date().toISOString()}`,
+        ].join("\n");
+
+        const emailSent = await sendAlertEmail(alertEmails, subject, text);
+        const pushSent = pushoverEnabled
+          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          : false;
+
+        if (emailSent || pushSent) alertsSent++;
       }
 
       continue;
@@ -285,19 +354,21 @@ export async function runMonitoringChecks(): Promise<MonitoringResult> {
       const due = Date.now() - lastNotifiedAt >= reminderMinutes * 60_000;
 
       if (due) {
-        const sent = await sendAlertEmail(
-          alertEmails,
-          `⏱️ Depozitka monitoring: incident trvá (${target.name})`,
-          [
-            `Target: ${target.name}`,
-            `URL: ${target.url}`,
-            `Open since: ${openIncident.opened_at}`,
-            `Last status: ${probe.statusCode ?? "ERR"}`,
-            `Time: ${new Date().toISOString()}`,
-          ].join("\n"),
-        );
+        const subject = `⏱️ Depozitka monitoring: incident trvá (${target.name})`;
+        const text = [
+          `Target: ${target.name}`,
+          `URL: ${target.url}`,
+          `Open since: ${openIncident.opened_at}`,
+          `Last status: ${probe.statusCode ?? "ERR"}`,
+          `Time: ${new Date().toISOString()}`,
+        ].join("\n");
 
-        if (sent) {
+        const emailSent = await sendAlertEmail(alertEmails, subject, text);
+        const pushSent = pushoverEnabled
+          ? await sendAlertPushover(pushoverUserKeys, subject, text, pushoverPriority, pushoverSound)
+          : false;
+
+        if (emailSent || pushSent) {
           alertsSent++;
           await supabase
             .from("dpt_monitor_incidents")
