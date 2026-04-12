@@ -71,10 +71,15 @@ export async function GET() {
     const last = lastByTarget.get(t.id) || null;
     const open = incidentByTarget.get(t.id) || null;
 
+    const normalizedUrl =
+      t.code === "engine-root" && typeof t.url === "string"
+        ? t.url.replace("https://depozitka-engine.vercel.app/", "https://engine.depozitka.eu/")
+        : t.url;
+
     return {
       code: t.code,
       name: t.name,
-      url: t.url,
+      url: normalizedUrl,
       severity: t.severity,
       status: open ? "incident" : !last ? "unknown" : last.ok ? "operational" : "degraded",
       lastCheck: last,
