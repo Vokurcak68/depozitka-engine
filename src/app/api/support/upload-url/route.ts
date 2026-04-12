@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { verifyTurnstile } from "@/lib/turnstile";
-import { corsHeaders, getRequestIp, hashIp, randomId, sanitizeFilename, hashToken } from "@/lib/support";
+import { corsHeaders, getRequestIp, randomId, sanitizeFilename, hashToken } from "@/lib/support";
 
 export const runtime = "nodejs";
 
 type Body = {
-  turnstileToken: string;
+  // Backward compatible: we used to require Turnstile here, but we intentionally don't anymore.
+  // Turnstile tokens are single-use; the create endpoint already verified it.
+  // Upload security is enforced via uploadToken + expiry returned from /api/support/create.
+  turnstileToken?: string;
   ticketId: string;
   uploadToken: string;
   fileName: string;
@@ -47,9 +49,6 @@ export async function POST(req: Request) {
     return json(400, { error: "INVALID_JSON" }, origin);
   }
 
-  const token = (body.turnstileToken || "").trim();
-  if (!token) return json(400, { error: "MISSING_TURNSTILE" }, origin);
-
   const ticketId = (body.ticketId || "").trim();
   if (!ticketId) return json(400, { error: "MISSING_TICKET_ID" }, origin);
 
@@ -64,27 +63,11 @@ export async function POST(req: Request) {
 
   const fileName = sanitizeFilename(body.fileName || "");
 
-  // Turnstile verify
   const ip = getRequestIp(req);
-  const verify = await verifyTurnstile({ token, remoteIp: ip, action: "support_upload" });
-  if (!verify.success) {
-    return json(403, { error: "TURNSTILE_FAILED", details: verify.error_codes || [] }, origin);
-  }
 
-  // Optional rate-limit: max 15 uploads / 10 min per IP hash
-  const ipHash = hashIp(ip);
-  if (ipHash) {
-    const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { count } = await supabase
-      .from("dpt_support_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("ip_hash", ipHash)
-      .gte("created_at", since);
-
-    if ((count || 0) >= 15) {
-      return json(429, { error: "RATE_LIMIT" }, origin);
-    }
-  }
+  // NOTE: We intentionally do NOT re-verify Turnstile here.
+  // Turnstile tokens are single-use and /api/support/create already verified it.
+  // Abuse is prevented by the short-lived uploadToken bound to the created ticket.
 
   // Ensure ticket exists + validate upload token
   const { data: ticket, error: ticketErr } = await supabase
