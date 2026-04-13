@@ -29,14 +29,25 @@ type Body = {
 
   initiatorRole: DealRole;
   initiatorEmail: string;
+  initiatorName?: string | null;
   initiatorPhone?: string | null;
 
   counterpartyEmail: string;
+  counterpartyName?: string | null;
   counterpartyPhone?: string | null;
 
   title: string;
   description?: string | null;
   totalAmountCzk: number;
+
+  deliveryMethod?: "personal" | "carrier" | null;
+  shippingTerms?: "buyer_pays" | "seller_pays" | "included" | "split" | "other" | null;
+  shippingCarrier?: string | null;
+  shippingNote?: string | null;
+  estimatedShipDate?: string | null; // YYYY-MM-DD
+
+  termsAccepted?: boolean;
+  termsVersion?: string | null;
 
   externalUrl?: string | null;
   externalSnapshot?: Record<string, unknown> | null;
@@ -83,8 +94,33 @@ export async function POST(req: Request) {
     const initiatorEmail = normalizeEmail(body.initiatorEmail);
     const counterpartyEmail = normalizeEmail(body.counterpartyEmail);
 
+    const initiatorName = safeText(body.initiatorName, 120) || null;
+    const counterpartyName = safeText(body.counterpartyName, 120) || null;
+
     const initiatorPhone = safeText(body.initiatorPhone, 40) || null;
     const counterpartyPhone = safeText(body.counterpartyPhone, 40) || null;
+
+    const deliveryMethod = (body.deliveryMethod as any) || null;
+    assert(!deliveryMethod || deliveryMethod === "personal" || deliveryMethod === "carrier", "INVALID_DELIVERY_METHOD");
+
+    const shippingTerms = (body.shippingTerms as any) || null;
+    assert(
+      !shippingTerms ||
+        ["buyer_pays", "seller_pays", "included", "split", "other"].includes(String(shippingTerms)),
+      "INVALID_SHIPPING_TERMS",
+    );
+
+    const shippingCarrier = safeText(body.shippingCarrier, 120) || null;
+    const shippingNote = safeText(body.shippingNote, 500) || null;
+
+    const estimatedShipDate = safeText(body.estimatedShipDate, 20) || null;
+    if (estimatedShipDate) {
+      assert(/^\d{4}-\d{2}-\d{2}$/.test(estimatedShipDate), "INVALID_ESTIMATED_SHIP_DATE");
+    }
+
+    const termsAccepted = body.termsAccepted === true;
+    assert(termsAccepted, "TERMS_REQUIRED");
+    const termsVersion = safeText(body.termsVersion, 50) || null;
 
     const title = safeText(body.title, 180);
     const description = safeText(body.description, 8000) || null;
@@ -146,12 +182,21 @@ export async function POST(req: Request) {
         status: "sent",
         initiator_role: initiatorRole,
         initiator_email: initiatorEmail,
+        initiator_name: initiatorName,
         initiator_phone: initiatorPhone,
         counterparty_email: counterpartyEmail,
+        counterparty_name: counterpartyName,
         counterparty_phone: counterpartyPhone,
         title,
         description,
         total_amount_czk: totalAmountCzk,
+        delivery_method: deliveryMethod,
+        shipping_terms: shippingTerms,
+        shipping_carrier: shippingCarrier,
+        shipping_note: shippingNote,
+        estimated_ship_date: estimatedShipDate,
+        terms_accepted_at: new Date().toISOString(),
+        terms_version: termsVersion,
         external_url: externalUrl,
         external_snapshot: externalSnapshot,
         external_image_storage_path: externalImageStoragePath,
