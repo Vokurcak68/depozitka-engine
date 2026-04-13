@@ -80,8 +80,12 @@ export async function POST(req: Request) {
     const ip = getRequestIp(req);
     const verify = await verifyTurnstile({ token, remoteIp: ip, action: "direct_deal_create" });
     if (!verify.success) {
+      const codes = (verify.error_codes && verify.error_codes.length > 0)
+        ? verify.error_codes
+        : ["unknown"];
+
       console.warn("Turnstile failed (direct_deals.create)", {
-        codes: verify.error_codes || [],
+        codes,
         hostname: verify.hostname,
         action: verify.action,
       });
@@ -92,7 +96,7 @@ export async function POST(req: Request) {
           ok: false,
           error: "TURNSTILE_FAILED",
           details: {
-            codes: verify.error_codes || [],
+            codes,
             hostname: verify.hostname,
             action: verify.action,
           },
