@@ -80,6 +80,12 @@ export async function POST(req: Request) {
     const ip = getRequestIp(req);
     const verify = await verifyTurnstile({ token, remoteIp: ip, action: "direct_deal_create" });
     if (!verify.success) {
+      console.warn("Turnstile failed (direct_deals.create)", {
+        codes: verify.error_codes || [],
+        hostname: verify.hostname,
+        action: verify.action,
+      });
+
       return json(
         403,
         {
