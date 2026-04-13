@@ -241,7 +241,11 @@ export async function POST(req: Request) {
       console.warn("Deal invite email failed", { dealId: deal.id, error: msg });
     }
 
-    return json(200, { ok: true, dealId: String(deal.id), status: "sent", inviteSent }, origin);
+    return json(
+      200,
+      { ok: true, dealId: String(deal.id), viewToken, status: "sent", inviteSent },
+      origin,
+    );
   } catch (e: unknown) {
     const code =
       typeof e === "object" && e !== null && "code" in e

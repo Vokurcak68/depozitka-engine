@@ -170,7 +170,7 @@ export async function POST(req: Request) {
 
     return json(
       200,
-      { ok: true, dealId: String(newDeal.id), status: "sent", inviteSent },
+      { ok: true, dealId: String(newDeal.id), viewToken: newViewToken, status: "sent", inviteSent },
       origin,
     );
   } catch (e: unknown) {
