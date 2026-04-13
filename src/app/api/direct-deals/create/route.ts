@@ -51,7 +51,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const token = safeText(body.turnstileToken, 400);
+    // Turnstile tokens are often >400 chars; don't truncate or verification will fail.
+    const token = safeText(body.turnstileToken, 5000);
     assert(token, "MISSING_TURNSTILE");
 
     const initiatorRole = body.initiatorRole;
