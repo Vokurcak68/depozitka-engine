@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   const { data: deal, error: dealErr } = await supabase
     .from("dpt_deals")
     .select(
-      "id,status,initiator_role,initiator_email,counterparty_email,title,description,total_amount_czk,external_url,external_snapshot,external_image_storage_path,view_token_hash,view_token_expires_at,expires_at,created_at,updated_at,transaction_id"
+      "id,status,initiator_role,initiator_email,initiator_name,counterparty_email,counterparty_name,title,description,total_amount_czk,delivery_method,shipping_terms,shipping_carrier,shipping_note,estimated_ship_date,terms_accepted_at,terms_version,external_url,external_snapshot,external_image_storage_path,view_token_hash,view_token_expires_at,expires_at,created_at,updated_at,transaction_id"
     )
     .eq("id", dealId)
     .maybeSingle();
@@ -71,10 +71,19 @@ export async function GET(req: Request) {
         status: deal.status,
         initiatorRole: deal.initiator_role,
         initiatorEmail: deal.initiator_email,
+        initiatorName: (deal as any).initiator_name || null,
         counterpartyEmail: deal.counterparty_email,
+        counterpartyName: (deal as any).counterparty_name || null,
         title: deal.title,
         description: deal.description,
         totalAmountCzk: deal.total_amount_czk,
+        deliveryMethod: (deal as any).delivery_method || null,
+        shippingTerms: (deal as any).shipping_terms || null,
+        shippingCarrier: (deal as any).shipping_carrier || null,
+        shippingNote: (deal as any).shipping_note || null,
+        estimatedShipDate: (deal as any).estimated_ship_date || null,
+        termsAcceptedAt: (deal as any).terms_accepted_at || null,
+        termsVersion: (deal as any).terms_version || null,
         externalUrl: deal.external_url,
         externalSnapshot: deal.external_snapshot,
         externalImageStoragePath: deal.external_image_storage_path,
