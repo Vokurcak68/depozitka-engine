@@ -80,7 +80,19 @@ export async function POST(req: Request) {
     const ip = getRequestIp(req);
     const verify = await verifyTurnstile({ token, remoteIp: ip, action: "direct_deal_create" });
     if (!verify.success) {
-      return json(403, { ok: false, error: "TURNSTILE_FAILED" }, origin);
+      return json(
+        403,
+        {
+          ok: false,
+          error: "TURNSTILE_FAILED",
+          details: {
+            codes: verify.error_codes || [],
+            hostname: verify.hostname,
+            action: verify.action,
+          },
+        },
+        origin,
+      );
     }
 
     // Rate limit: max 5 direct deals / 10 min per IP hash
