@@ -2,6 +2,7 @@ type TurnstileResult = {
   success: boolean;
   challenge_ts?: string;
   hostname?: string;
+  // Cloudflare uses "error-codes" (hyphen). We normalize to camel/snake.
   error_codes?: string[];
   action?: string;
   cdata?: string;
@@ -33,7 +34,12 @@ export async function verifyTurnstile(params: {
     throw new Error(`Turnstile verify failed: HTTP ${res.status}`);
   }
 
-  const json = (await res.json()) as TurnstileResult;
+  const raw = (await res.json()) as any;
+
+  const json: TurnstileResult = {
+    ...raw,
+    error_codes: raw?.error_codes || raw?.["error-codes"],
+  };
 
   // Optional action check (Turnstile supports it)
   if (json.success && params.action && json.action && json.action !== params.action) {
