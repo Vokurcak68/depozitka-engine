@@ -3,10 +3,38 @@ import { supabase } from "@/lib/supabase";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getRequestIp, hashIp } from "@/lib/support";
 import { corsHeaders, normalizeEmail, safeText, assert } from "@/lib/direct-deals";
+import { getTransporter, SMTP_FROM } from "@/lib/smtp";
 
 export const runtime = "nodejs";
 
 type Body = {
+  turnstileToken: string;
+
+  initiatorRole: "buyer" | "seller";
+  initiatorName: string;
+  initiatorEmail: string;
+
+  counterpartyName?: string;
+  counterpartyEmail: string;
+
+  amountCzk: number;
+  shippingCarrier: string;
+
+  subject: string;
+  message?: string;
+};
+
+function getWebBaseUrl(): string {
+  // Used for links in invitation emails (counterparty).
+  // Must point to depozitka-web (not engine).
+  return (
+    process.env.WEB_BASE_URL ||
+    process.env.NEXT_PUBLIC_WEB_BASE_URL ||
+    "https://depozitka.eu"
+  ).replace(/\/$/, "");
+}
+
+type _BodyRemoved = {
   turnstileToken: string;
 
   initiatorRole: "buyer" | "seller";
@@ -132,7 +160,7 @@ export async function POST(req: Request) {
         counterparty_name: counterpartyName,
         counterparty_email: counterpartyEmail,
       })
-      .select("id, public_token")
+      .select("id, public_token, edit_token")
       .single();
 
     if (dealErr || !deal) {
@@ -165,11 +193,66 @@ export async function POST(req: Request) {
       .update({ current_version_id: ver.id })
       .eq("id", deal.id);
 
+    // Send invitation email to counterparty (link + summary)
+    let inviteSent = false;
+    try {
+      const webBase = getWebBaseUrl();
+      const dealUrl = `${webBase}/bezpecna-platba/deal/${deal.public_token}`;
+
+      const transporter = getTransporter();
+      const subjectMail = `Depozitka: návrh bezpečné platby`;
+      const text = [
+        `Dobrý den,`,
+        ``,
+        `${initiatorName} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
+        ``,
+        `Předmět: ${subject}`,
+        `Cena (vč. dopravy): ${amountCzk.toLocaleString("cs-CZ")} Kč`,
+        `Dopravce: ${shippingCarrier}`,
+        message ? `Poznámka: ${message}` : null,
+        ``,
+        `Otevřít nabídku: ${dealUrl}`,
+        ``,
+        `Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: counterpartyEmail,
+        replyTo: initiatorEmail,
+        subject: subjectMail,
+        text,
+      });
+
+      // Optional: confirmation to initiator (lightweight)
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: initiatorEmail,
+        subject: `Depozitka: pozvánka odeslána`,
+        text: [
+          `Pozvánka byla odeslána na ${counterpartyEmail}.`,
+          ``,
+          `Link na nabídku: ${dealUrl}`,
+        ].join("\n"),
+      });
+
+      inviteSent = true;
+    } catch (e) {
+      console.warn("Direct deal invite email failed", {
+        dealId: deal.id,
+        error: (e as any)?.message || String(e),
+      });
+    }
+
     return json(
       200,
       {
         ok: true,
         dealToken: String(deal.public_token),
+        editToken: String((deal as any).edit_token),
+        inviteSent,
       },
       origin,
     );
