@@ -28,34 +28,43 @@ export async function GET(req: Request) {
 
   if (!token) return json(400, { ok: false, error: "MISSING_TOKEN" }, origin);
 
-  const { data, error } = await supabase
+  const { data: deal, error: dealErr } = await supabase
     .from("dpt_direct_deals")
-    .select(
-      `status, initiator_role, initiator_name, counterparty_email,
-       dpt_direct_deal_versions!dpt_direct_deals_current_version_id_fkey(version_no,status,subject,amount_czk,shipping_carrier)`
-    )
+    .select("status, initiator_role, initiator_name, counterparty_email, current_version_id")
     .eq("public_token", token)
     .maybeSingle();
 
-  if (error || !data) {
+  if (dealErr || !deal) {
     return json(404, { ok: false, error: "NOT_FOUND" }, origin);
   }
 
-  const v = (data as any).dpt_direct_deal_versions;
+  if (!deal.current_version_id) {
+    return json(409, { ok: false, error: "MISSING_VERSION" }, origin);
+  }
+
+  const { data: v, error: verErr } = await supabase
+    .from("dpt_direct_deal_versions")
+    .select("version_no,status,subject,amount_czk,shipping_carrier")
+    .eq("id", deal.current_version_id)
+    .maybeSingle();
+
+  if (verErr || !v) {
+    return json(409, { ok: false, error: "MISSING_VERSION" }, origin);
+  }
 
   return json(
     200,
     {
       ok: true,
       deal: {
-        status: data.status,
-        subject: v?.subject,
-        amountCzk: v?.amount_czk,
-        shippingCarrier: v?.shipping_carrier,
-        initiatorRole: data.initiator_role,
-        initiatorName: data.initiator_name,
-        counterpartyEmail: data.counterparty_email,
-        versionNo: v?.version_no,
+        status: deal.status,
+        subject: v.subject,
+        amountCzk: v.amount_czk,
+        shippingCarrier: v.shipping_carrier,
+        initiatorRole: deal.initiator_role,
+        initiatorName: deal.initiator_name,
+        counterpartyEmail: deal.counterparty_email,
+        versionNo: v.version_no,
       },
     },
     origin,
