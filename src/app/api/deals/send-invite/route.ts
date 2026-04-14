@@ -80,8 +80,8 @@ export async function POST(req: Request) {
     }
 
     const dealRow = deal as DealRow;
-    const initiatorEmail = normalizeEmail(dealRow.initiator_email);
-    const counterpartyEmail = normalizeEmail(dealRow.counterparty_email);
+    const initiatorEmail = normalizeEmail(dealRow.initiator_email || "");
+    const counterpartyEmail = normalizeEmail(dealRow.counterparty_email || "");
     assert(initiatorEmail.includes("@"), "INVALID_INITIATOR_EMAIL");
     assert(counterpartyEmail.includes("@"), "INVALID_COUNTERPARTY_EMAIL");
 

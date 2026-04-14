@@ -62,11 +62,39 @@ export function nameFromEmail(email: string): string {
 }
 
 export function getWebBaseUrl(): string {
-  return (
+  const raw =
     process.env.WEB_BASE_URL ||
     process.env.NEXT_PUBLIC_WEB_BASE_URL ||
-    "https://depozitka.eu"
-  ).replace(/\/$/, "");
+    "https://www.depozitka.eu";
+
+  const normalized = (raw || "").trim();
+  const withScheme = /^https?:\/\//i.test(normalized)
+    ? normalized
+    : `https://${normalized}`;
+
+  try {
+    const url = new URL(withScheme);
+
+    // vždy HTTPS
+    url.protocol = "https:";
+
+    // apex občas dělá problémy s certifikátem v některých klientech
+    if (url.hostname === "depozitka.eu") {
+      url.hostname = "www.depozitka.eu";
+    }
+
+    // bezpečná fallback doména pro webové linky v e-mailech
+    if (
+      url.hostname === "engine.depozitka.eu" ||
+      url.hostname.endsWith(".vercel.app")
+    ) {
+      return "https://www.depozitka.eu";
+    }
+
+    return url.origin;
+  } catch {
+    return "https://www.depozitka.eu";
+  }
 }
 
 function isPrivateIpv4(host: string): boolean {
