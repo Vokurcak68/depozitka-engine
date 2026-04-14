@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { corsHeaders } from "@/lib/direct-deals";
-import { hashViewToken, safeEqual, safeText, assert } from "@/lib/deals";
+import { hashViewToken, safeEqual, safeText } from "@/lib/deals";
 import { randomId, sanitizeFilename } from "@/lib/support";
 import { getSettingNumber } from "@/lib/settings";
 
