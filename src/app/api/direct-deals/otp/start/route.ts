@@ -7,7 +7,16 @@ export const runtime = "nodejs";
 
 type Body = { token: string };
 
-function json(status: number, data: any, origin?: string) {
+type DealWithVersion = {
+  dpt_direct_deal_versions?: {
+    id?: string;
+    status?: string;
+    version_no?: number;
+    subject?: string;
+  } | null;
+};
+
+function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: {
@@ -49,7 +58,7 @@ export async function POST(req: Request) {
 
     if (dealErr || !deal) return json(404, { ok: false, error: "NOT_FOUND" }, origin);
 
-    const version = (deal as any).dpt_direct_deal_versions;
+    const version = (deal as unknown as DealWithVersion).dpt_direct_deal_versions;
     if (!version?.id) return json(409, { ok: false, error: "MISSING_VERSION" }, origin);
 
     // only allow if pending response
@@ -95,7 +104,13 @@ export async function POST(req: Request) {
     });
 
     return json(200, { ok: true }, origin);
-  } catch (e: any) {
-    return json(400, { ok: false, error: e?.code || e?.message || "BAD_REQUEST" }, origin);
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code?: unknown }).code)
+        : undefined;
+
+    const message = e instanceof Error ? e.message : String(e);
+    return json(400, { ok: false, error: code || message || "BAD_REQUEST" }, origin);
   }
 }

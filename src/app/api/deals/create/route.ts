@@ -24,6 +24,9 @@ type Attachment = {
   fileSize: number;
 };
 
+// NOTE: attachments are now primarily handled via /api/deals/upload-url (signed upload + DB row insert).
+// We keep attachments[] here for backward-compat / optional bulk-create flows.
+
 type Body = {
   turnstileToken: string;
 

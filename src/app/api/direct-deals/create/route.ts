@@ -51,7 +51,7 @@ type _BodyRemoved = {
   message?: string;
 };
 
-function json(status: number, data: any, origin?: string) {
+function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: {
@@ -239,11 +239,9 @@ export async function POST(req: Request) {
       });
 
       inviteSent = true;
-    } catch (e) {
-      console.warn("Direct deal invite email failed", {
-        dealId: deal.id,
-        error: (e as any)?.message || String(e),
-      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("Direct deal invite email failed", { dealId: deal.id, error: msg });
     }
 
     return json(
@@ -251,12 +249,18 @@ export async function POST(req: Request) {
       {
         ok: true,
         dealToken: String(deal.public_token),
-        editToken: String((deal as any).edit_token),
+        editToken: String((deal as unknown as { edit_token?: unknown }).edit_token),
         inviteSent,
       },
       origin,
     );
-  } catch (e: any) {
-    return json(400, { ok: false, error: e?.code || e?.message || "BAD_REQUEST" }, origin);
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code?: unknown }).code)
+        : undefined;
+
+    const message = e instanceof Error ? e.message : String(e);
+    return json(400, { ok: false, error: code || message || "BAD_REQUEST" }, origin);
   }
 }

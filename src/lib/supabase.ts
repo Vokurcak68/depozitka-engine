@@ -23,6 +23,7 @@ export function getSupabase(): SupabaseClient {
 /** Convenience alias */
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_, prop) {
-    return (getSupabase() as any)[prop];
+    const client = getSupabase() as unknown as Record<string | symbol, unknown>;
+    return client[prop];
   },
-});
+}) as unknown as SupabaseClient;

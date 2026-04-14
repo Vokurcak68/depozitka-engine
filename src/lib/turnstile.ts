@@ -34,11 +34,16 @@ export async function verifyTurnstile(params: {
     throw new Error(`Turnstile verify failed: HTTP ${res.status}`);
   }
 
-  const raw = (await res.json()) as any;
+  const raw = (await res.json()) as Record<string, unknown>;
+
+  const errorCodesRaw = raw["error_codes"] ?? raw["error-codes"];
+  const error_codes = Array.isArray(errorCodesRaw)
+    ? errorCodesRaw.map((v) => String(v))
+    : undefined;
 
   const json: TurnstileResult = {
-    ...raw,
-    error_codes: raw?.error_codes || raw?.["error-codes"],
+    ...(raw as unknown as TurnstileResult),
+    error_codes,
   };
 
   // Optional action check (Turnstile supports it)

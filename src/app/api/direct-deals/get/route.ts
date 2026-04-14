@@ -4,7 +4,7 @@ import { corsHeaders } from "@/lib/direct-deals";
 
 export const runtime = "nodejs";
 
-function json(status: number, data: any, origin?: string) {
+function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: {

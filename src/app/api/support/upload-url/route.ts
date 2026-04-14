@@ -16,7 +16,7 @@ type Body = {
   fileSize: number;
 };
 
-function json(status: number, data: any, origin?: string) {
+function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: {
@@ -81,7 +81,9 @@ export async function POST(req: Request) {
   }
 
   const now = Date.now();
-  const expiresAt = ticket.upload_token_expires_at ? Date.parse(ticket.upload_token_expires_at as any) : 0;
+  const expiresAt = ticket.upload_token_expires_at
+    ? Date.parse(String(ticket.upload_token_expires_at))
+    : 0;
   const expected = ticket.upload_token_hash as string | null;
   if (!expected || !expiresAt || expiresAt < now) {
     return json(403, { error: "UPLOAD_TOKEN_EXPIRED" }, origin);
@@ -95,8 +97,8 @@ export async function POST(req: Request) {
   const objectPath = `tickets/${ticketId}/${randomId()}-${fileName}`;
 
   // Signed upload URL (short-lived)
-  const { data: signed, error: signErr } = await (supabase as any)
-    .storage
+  const sb = supabase as unknown as { storage: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data: signed, error: signErr } = await sb.storage
     .from("dpt-support-attachments")
     .createSignedUploadUrl(objectPath);
 

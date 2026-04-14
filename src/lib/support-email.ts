@@ -47,7 +47,8 @@ export async function sendSupportEmails(params: {
     });
 
     return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || String(e) };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
   }
 }

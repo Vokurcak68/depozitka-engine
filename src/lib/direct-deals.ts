@@ -48,10 +48,10 @@ export function nameFromEmail(email: string): string {
   return local.replace(/[._-]+/g, " ").slice(0, 80) || "Uživatel";
 }
 
-export function assert(condition: any, code: string): asserts condition {
+export function assert(condition: unknown, code: string): asserts condition {
   if (!condition) {
     const err = new Error(code);
-    (err as any).code = code;
+    (err as unknown as { code?: string }).code = code;
     throw err;
   }
 }

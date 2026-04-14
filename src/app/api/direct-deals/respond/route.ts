@@ -6,7 +6,20 @@ export const runtime = "nodejs";
 
 type Body = { token: string; accept: boolean };
 
-function json(status: number, data: any, origin?: string) {
+type DealWithVersion = {
+  dpt_direct_deal_versions?: {
+    id?: string;
+    version_no?: number;
+    status?: string;
+    subject?: string;
+    message?: string | null;
+    amount_czk?: number;
+    shipping_carrier?: string;
+    transaction_id?: string | null;
+  } | null;
+};
+
+function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: {
@@ -50,7 +63,7 @@ export async function POST(req: Request) {
 
     if (dealErr || !deal) return json(404, { ok: false, error: "NOT_FOUND" }, origin);
 
-    const v = (deal as any).dpt_direct_deal_versions;
+    const v = (deal as unknown as DealWithVersion).dpt_direct_deal_versions;
     if (!v?.id) return json(409, { ok: false, error: "MISSING_VERSION" }, origin);
 
     // Must be OTP-verified
@@ -109,7 +122,14 @@ export async function POST(req: Request) {
     await supabase.from("dpt_direct_deals").update({ status: "accepted" }).eq("id", deal.id);
 
     return json(200, { ok: true, next: { type: "tx", transactionCode: tx.transaction_code } }, origin);
-  } catch (e: any) {
-    return json(400, { ok: false, error: e?.code || e?.message || "BAD_REQUEST" }, origin);
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code?: unknown }).code)
+        : undefined;
+
+    const message = e instanceof Error ? e.message : String(e);
+
+    return json(400, { ok: false, error: code || message || "BAD_REQUEST" }, origin);
   }
 }
