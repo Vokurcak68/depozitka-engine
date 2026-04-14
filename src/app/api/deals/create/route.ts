@@ -213,7 +213,21 @@ export async function POST(req: Request) {
       .single();
 
     if (dealErr || !deal) {
-      return json(500, { ok: false, error: "DB_INSERT_DEAL_FAILED" }, origin);
+      // include minimal diagnostics (safe for client) to speed up debugging
+      return json(
+        500,
+        {
+          ok: false,
+          error: "DB_INSERT_DEAL_FAILED",
+          details: {
+            code: (dealErr as any)?.code,
+            message: (dealErr as any)?.message,
+            details: (dealErr as any)?.details,
+            hint: (dealErr as any)?.hint,
+          },
+        },
+        origin,
+      );
     }
 
     // Insert attachment snapshot rows
