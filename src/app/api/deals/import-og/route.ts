@@ -27,17 +27,57 @@ export async function OPTIONS(req: Request) {
   });
 }
 
-function extractMeta(html: string, key: string): string | undefined {
+function extractMetaProperty(html: string, key: string): string | undefined {
   const re1 = new RegExp(`<meta[^>]+property=["']${key}["'][^>]+content=["']([^"']+)["'][^>]*>`, "i");
   const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${key}["'][^>]*>`, "i");
   return html.match(re1)?.[1] || html.match(re2)?.[1];
 }
 
+function extractMetaName(html: string, key: string): string | undefined {
+  const re1 = new RegExp(`<meta[^>]+name=["']${key}["'][^>]+content=["']([^"']+)["'][^>]*>`, "i");
+  const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+name=["']${key}["'][^>]*>`, "i");
+  return html.match(re1)?.[1] || html.match(re2)?.[1];
+}
+
+function extractMetaAny(html: string, key: string): string | undefined {
+  return extractMetaProperty(html, key) || extractMetaName(html, key);
+}
+
 function extractTitle(html: string): string | undefined {
-  const og = extractMeta(html, "og:title");
+  const og = extractMetaProperty(html, "og:title");
   if (og) return og;
+  const tw = extractMetaAny(html, "twitter:title") || extractMetaAny(html, "title");
+  if (tw) return tw;
   const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return m?.[1]?.trim();
+}
+
+function isGenericTitle(t: string | null | undefined): boolean {
+  const s = String(t || "").trim().toLowerCase();
+  if (!s) return true;
+  return (
+    s === "facebook" ||
+    s === "instagram" ||
+    s === "log in" ||
+    s.includes("log into facebook") ||
+    s.includes("facebook – přihlášení") ||
+    s.includes("facebook — přihlášení") ||
+    s.includes("facebook - log in")
+  );
+}
+
+function unwrapFacebookRedirect(u: URL): URL {
+  // FB sometimes wraps outbound links like https://l.facebook.com/l.php?u=<encoded>
+  try {
+    const host = u.hostname.toLowerCase();
+    if (host === "l.facebook.com" || host === "lm.facebook.com") {
+      const target = u.searchParams.get("u");
+      if (target) return new URL(target);
+    }
+  } catch {
+    // ignore
+  }
+  return u;
 }
 
 export async function POST(req: Request) {
@@ -51,7 +91,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const u = parsePublicHttpUrl(body.url);
+    const u0 = parsePublicHttpUrl(body.url);
+    const u = unwrapFacebookRedirect(u0);
 
     const r = await fetch(u.toString(), {
       method: "GET",
@@ -73,9 +114,22 @@ export async function POST(req: Request) {
     }
 
     const html = await r.text();
-    const title = safeText(extractTitle(html), 180) || null;
-    const description = safeText(extractMeta(html, "og:description") || extractMeta(html, "description"), 1000) || null;
-    const imageRaw = safeText(extractMeta(html, "og:image"), 1200) || null;
+
+    // Prefer OG/Twitter description; fall back to meta name=description.
+    const titleRaw = safeText(extractTitle(html), 180) || null;
+    const descRaw =
+      safeText(
+        extractMetaProperty(html, "og:description") ||
+          extractMetaAny(html, "twitter:description") ||
+          extractMetaName(html, "description"),
+        1000,
+      ) || null;
+
+    // FB sometimes serves a generic login/landing HTML with useless title/description.
+    const title = isGenericTitle(titleRaw) ? null : titleRaw;
+    const description = title ? descRaw : null;
+
+    const imageRaw = safeText(extractMetaProperty(html, "og:image") || extractMetaAny(html, "twitter:image"), 1200) || null;
 
     let imageStoragePath: string | null = null;
 
