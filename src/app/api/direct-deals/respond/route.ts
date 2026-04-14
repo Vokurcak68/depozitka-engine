@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     const { data: deal, error: dealErr } = await supabase
       .from("dpt_direct_deals")
       .select(
-        `id, status, initiator_role, initiator_name, initiator_email, counterparty_name, counterparty_email,
+        `id, public_token, status, initiator_role, initiator_name, initiator_email, counterparty_name, counterparty_email,
          dpt_direct_deal_versions!dpt_direct_deals_current_version_id_fkey(id,version_no,status,subject,message,amount_czk,shipping_carrier,transaction_id)`
       )
       .eq("public_token", token)
@@ -91,8 +91,9 @@ export async function POST(req: Request) {
     const externalOrderId = `DD-${deal.id}-v${v.version_no}`;
 
     const metadata = {
-      source: "direct-deals",
+      source: "direct_deal",
       direct_deal_id: deal.id,
+      direct_deal_public_token: (deal as { public_token?: string }).public_token || token,
       direct_deal_version_id: v.id,
       direct_deal_version_no: v.version_no,
       subject: v.subject,
@@ -116,7 +117,11 @@ export async function POST(req: Request) {
     if (txErr || !tx) return json(500, { ok: false, error: "TX_CREATE_FAILED" }, origin);
 
     // Save carrier as free-text label for now (actual ship API uses normalized carrier codes later)
-    await supabase.from("dpt_transactions").update({ shipping_carrier: v.shipping_carrier }).eq("id", tx.id);
+    // and mark source explicitly for easier filtering in core UI.
+    await supabase
+      .from("dpt_transactions")
+      .update({ shipping_carrier: v.shipping_carrier, source: "direct_deal" })
+      .eq("id", tx.id);
 
     await supabase.from("dpt_direct_deal_versions").update({ status: "accepted", transaction_id: tx.id }).eq("id", v.id);
     await supabase.from("dpt_direct_deals").update({ status: "accepted" }).eq("id", deal.id);
