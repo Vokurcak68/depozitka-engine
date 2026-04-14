@@ -261,7 +261,20 @@ export async function POST(req: Request) {
 
       const { error: attErr } = await supabase.from("dpt_deal_attachments").insert(rows);
       if (attErr) {
-        return json(500, { ok: false, error: "DB_INSERT_ATTACHMENTS_FAILED" }, origin);
+        return json(
+          500,
+          {
+            ok: false,
+            error: "DB_INSERT_ATTACHMENTS_FAILED",
+            details: {
+              code: (attErr as any)?.code,
+              message: (attErr as any)?.message,
+              details: (attErr as any)?.details,
+              hint: (attErr as any)?.hint,
+            },
+          },
+          origin,
+        );
       }
     }
 
@@ -305,7 +318,14 @@ export async function POST(req: Request) {
 
     return json(
       200,
-      { ok: true, dealId: String(deal.id), viewToken, status: "sent", inviteSent },
+      {
+        ok: true,
+        dealId: String(deal.id),
+        viewToken,
+        status: "sent",
+        inviteSent,
+        attachedCount: Array.isArray(body.attachments) ? body.attachments.length : 0,
+      },
       origin,
     );
   } catch (e: unknown) {
