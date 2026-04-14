@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   const { data: deal, error: dealErr } = await supabase
     .from("dpt_deals")
     .select(
-      "id,status,initiator_role,initiator_email,initiator_name,counterparty_email,counterparty_name,title,description,total_amount_czk,delivery_method,shipping_terms,shipping_carrier,shipping_note,estimated_ship_date,terms_accepted_at,terms_version,external_url,external_snapshot,external_image_storage_path,view_token_hash,view_token_expires_at,expires_at,created_at,updated_at,transaction_id"
+      "id,status,initiator_role,initiator_email,initiator_name,counterparty_email,counterparty_name,title,description,total_amount_czk,delivery_method,shipping_terms,shipping_carrier,shipping_note,estimated_ship_date,terms_accepted_at,terms_version,external_url,external_snapshot,external_image_storage_path,rejection_reason,view_token_hash,view_token_expires_at,expires_at,created_at,updated_at,transaction_id"
     )
     .eq("id", dealId)
     .maybeSingle();
@@ -87,6 +87,7 @@ export async function GET(req: Request) {
         externalUrl: deal.external_url,
         externalSnapshot: deal.external_snapshot,
         externalImageStoragePath: deal.external_image_storage_path,
+        rejectionReason: (deal as any).rejection_reason || null,
         expiresAt: deal.expires_at,
         transactionId: deal.transaction_id,
         createdAt: deal.created_at,

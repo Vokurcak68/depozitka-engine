@@ -9,6 +9,7 @@ import {
   hashOtp,
 } from "@/lib/deals";
 import { getSettingNumber } from "@/lib/settings";
+import { getTransporter, SMTP_FROM } from "@/lib/smtp";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ type Body = {
   dealId: string;
   viewToken: string;
   otp: string;
+  reason?: string | null;
 };
 
 function json(status: number, data: unknown, origin?: string) {
@@ -49,9 +51,11 @@ export async function POST(req: Request) {
     const dealId = safeText(body.dealId, 120);
     const viewToken = safeText(body.viewToken, 200);
     const otp = safeText(body.otp, 16);
+    const reason = safeText(body.reason, 2000) || "";
     assert(dealId, "MISSING_DEAL_ID");
     assert(viewToken, "MISSING_VIEW_TOKEN");
     assert(otp, "MISSING_OTP");
+    assert(reason, "MISSING_REJECT_REASON");
 
     const { data: deal, error: dealErr } = await supabase
       .from("dpt_deals")
@@ -102,7 +106,65 @@ export async function POST(req: Request) {
     if (!otpOk) return json(403, { ok: false, error: "OTP_INVALID" }, origin);
 
     await supabase.from("dpt_deal_otps").update({ consumed_at: nowIso }).eq("id", otpRow.id);
-    await supabase.from("dpt_deals").update({ status: "rejected" }).eq("id", dealId);
+
+    // store reason (best-effort; keep reject working even if DB not migrated yet)
+    const { error: rejErr } = await supabase
+      .from("dpt_deals")
+      .update({ status: "rejected", rejection_reason: reason } as any)
+      .eq("id", dealId);
+
+    if (rejErr) {
+      const msg = String((rejErr as any)?.message || "");
+      const code = String((rejErr as any)?.code || "");
+      const missingColumn = code === "42703" || msg.includes("rejection_reason");
+
+      if (!missingColumn) return json(500, { ok: false, error: "DB_UPDATE_REJECT_FAILED" }, origin);
+
+      // fallback: update status only
+      const { error: rejFallbackErr } = await supabase.from("dpt_deals").update({ status: "rejected" }).eq("id", dealId);
+      if (rejFallbackErr) return json(500, { ok: false, error: "DB_UPDATE_REJECT_FAILED" }, origin);
+    }
+
+    // Notify initiator
+    try {
+      const { data: fullDeal } = await supabase
+        .from("dpt_deals")
+        .select("initiator_email,counterparty_email,title,total_amount_czk,external_url")
+        .eq("id", dealId)
+        .maybeSingle();
+
+      if (fullDeal?.initiator_email) {
+        const transporter = getTransporter();
+        const subject = `Depozitka: nabídka byla zamítnuta`;
+        const text = [
+          `Dobrý den,`,
+          ``,
+          `Protistrana zamítla nabídku bezpečné platby.`,
+          ``,
+          `Název: ${fullDeal.title}`,
+          `Cena: ${Number(fullDeal.total_amount_czk).toLocaleString("cs-CZ")} Kč`,
+          fullDeal.external_url ? `Odkaz: ${fullDeal.external_url}` : null,
+          ``,
+          `Důvod zamítnutí:`,
+          reason,
+          ``,
+          `Pokud chcete pokračovat, upravte nabídku a pošlete novou.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        await transporter.sendMail({
+          from: SMTP_FROM,
+          to: String(fullDeal.initiator_email),
+          replyTo: String(fullDeal.counterparty_email || "") || undefined,
+          subject,
+          text,
+        });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("Reject notify initiator email failed", { dealId, error: msg });
+    }
 
     return json(200, { ok: true }, origin);
   } catch (e: unknown) {
