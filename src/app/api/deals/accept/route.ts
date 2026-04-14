@@ -123,6 +123,7 @@ export async function POST(req: Request) {
     const metadata = {
       source: "direct",
       dealId: deal.id,
+      deal_view_token: viewToken,
       externalUrl: deal.external_url,
       externalSnapshot: deal.external_snapshot,
       description: deal.description,
