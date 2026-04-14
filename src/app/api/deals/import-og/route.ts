@@ -57,6 +57,8 @@ type ImportedAttachment = {
   fileName: string;
   contentType: string;
   fileSize: number;
+  // For UI preview before a deal exists (limited-time signed URL)
+  signedUrl?: string;
 };
 
 function isGenericTitle(t: string | null | undefined): boolean {
@@ -177,11 +179,21 @@ async function downloadImageToStorage(u: URL, pageBase: URL, imageUrlRaw: string
 
     if (upErr) return null;
 
+    // Signed URL for preview on the create form (before deal exists)
+    let signedUrl: string | undefined;
+    try {
+      const { data: signed, error: signErr } = await sb.storage.from("dpt-deal-attachments").createSignedUrl(storagePath, 60 * 60);
+      if (!signErr && signed?.signedUrl) signedUrl = signed.signedUrl;
+    } catch {
+      // ignore
+    }
+
     return {
       storagePath,
       fileName: `inzerat.${ext}`,
       contentType: imgType,
       fileSize: ab.byteLength,
+      signedUrl,
     };
   } catch {
     return null;
