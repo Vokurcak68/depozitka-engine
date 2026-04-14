@@ -315,6 +315,20 @@ export async function POST(req: Request) {
           text,
         });
 
+        // Also send a copy to the initiator (so they see exactly what was sent)
+        try {
+          await transporter.sendMail({
+            from: SMTP_FROM,
+            to: initiatorEmail,
+            replyTo: initiatorEmail,
+            subject: `Kopie: ${subjectMail}`,
+            text,
+          });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn("Deal initiator copy email failed", { dealId: deal.id, error: msg });
+        }
+
         inviteSent = true;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
