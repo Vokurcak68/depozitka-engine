@@ -1,0 +1,115 @@
+import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
+import { corsHeaders } from "@/lib/direct-deals";
+import { assert, safeText, normalizeEmail, hashViewToken, safeEqual, getWebBaseUrl } from "@/lib/deals";
+import { getTransporter, SMTP_FROM } from "@/lib/smtp";
+
+export const runtime = "nodejs";
+
+type Body = {
+  dealId: string;
+  viewToken: string;
+};
+
+function json(status: number, data: unknown, origin?: string) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      ...corsHeaders(origin),
+    },
+  });
+}
+
+export async function OPTIONS(req: Request) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders(req.headers.get("origin") || undefined),
+  });
+}
+
+export async function POST(req: Request) {
+  const origin = req.headers.get("origin") || undefined;
+
+  let body: Body;
+  try {
+    body = (await req.json()) as Body;
+  } catch {
+    return json(400, { ok: false, error: "INVALID_JSON" }, origin);
+  }
+
+  try {
+    const dealId = safeText(body.dealId, 120);
+    const viewToken = safeText(body.viewToken, 200);
+    assert(dealId, "MISSING_DEAL_ID");
+    assert(viewToken, "MISSING_VIEW_TOKEN");
+
+    const { data: deal, error: dealErr } = await supabase
+      .from("dpt_deals")
+      .select(
+        "id,status,view_token_hash,view_token_expires_at,initiator_email,counterparty_email,title,description,total_amount_czk,external_url",
+      )
+      .eq("id", dealId)
+      .maybeSingle();
+
+    if (dealErr || !deal) return json(404, { ok: false, error: "NOT_FOUND" }, origin);
+
+    if ((deal.view_token_expires_at as string) < new Date().toISOString()) {
+      return json(410, { ok: false, error: "VIEW_TOKEN_EXPIRED" }, origin);
+    }
+
+    if (!safeEqual(String(deal.view_token_hash || ""), hashViewToken(viewToken))) {
+      return json(403, { ok: false, error: "INVALID_VIEW_TOKEN" }, origin);
+    }
+
+    if (String(deal.status) !== "draft") {
+      // idempotent-ish: allow re-send only from draft in MVP
+      return json(409, { ok: false, error: "INVALID_STATE" }, origin);
+    }
+
+    const initiatorEmail = normalizeEmail((deal as any).initiator_email);
+    const counterpartyEmail = normalizeEmail((deal as any).counterparty_email);
+    assert(initiatorEmail.includes("@"), "INVALID_INITIATOR_EMAIL");
+    assert(counterpartyEmail.includes("@"), "INVALID_COUNTERPARTY_EMAIL");
+
+    const webBase = getWebBaseUrl();
+    const dealUrl = `${webBase}/deal/${deal.id}?t=${encodeURIComponent(viewToken)}`;
+
+    const transporter = getTransporter();
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: counterpartyEmail,
+      replyTo: initiatorEmail,
+      subject: "Depozitka: návrh bezpečné platby",
+      text: [
+        "Dobrý den,",
+        "",
+        `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
+        "",
+        `Název: ${String((deal as any).title || "").slice(0, 180)}`,
+        `Cena (vč. dopravy): ${Number((deal as any).total_amount_czk).toLocaleString("cs-CZ")} Kč`,
+        (deal as any).external_url ? `Odkaz: ${(deal as any).external_url}` : null,
+        "",
+        `Otevřít nabídku: ${dealUrl}`,
+        "",
+        "Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+
+    const { error: updErr } = await supabase
+      .from("dpt_deals")
+      .update({ status: "sent" })
+      .eq("id", deal.id)
+      .eq("status", "draft");
+
+    if (updErr) return json(500, { ok: false, error: "DB_UPDATE_STATUS_FAILED" }, origin);
+
+    return json(200, { ok: true }, origin);
+  } catch (e: unknown) {
+    const code = typeof e === "object" && e !== null && "code" in e ? String((e as { code?: unknown }).code) : undefined;
+    const message = e instanceof Error ? e.message : String(e);
+    return json(400, { ok: false, error: code || message || "BAD_REQUEST" }, origin);
+  }
+}

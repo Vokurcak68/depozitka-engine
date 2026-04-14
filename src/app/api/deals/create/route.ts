@@ -29,6 +29,8 @@ type Attachment = {
 
 type Body = {
   turnstileToken: string;
+  // default true: create + send email now. When false: create draft, upload attachments, then call /api/deals/send-invite
+  sendInvite?: boolean;
 
   initiatorRole: DealRole;
   initiatorEmail: string;
@@ -179,10 +181,12 @@ export async function POST(req: Request) {
     const externalImageStoragePath = safeText(body.externalImageStoragePath, 500) || null;
 
     // Create deal
+    const sendInvite = body.sendInvite !== false;
+
     const { data: deal, error: dealErr } = await supabase
       .from("dpt_deals")
       .insert({
-        status: "sent",
+        status: sendInvite ? "sent" : "draft",
         initiator_role: initiatorRole,
         initiator_email: initiatorEmail,
         initiator_name: initiatorName,
@@ -278,42 +282,44 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send invitation email to counterparty
+    // Send invitation email to counterparty (unless draft)
     let inviteSent = false;
-    try {
-      const webBase = getWebBaseUrl();
-      const dealUrl = `${webBase}/deal/${deal.id}?t=${encodeURIComponent(viewToken)}`;
+    if (sendInvite) {
+      try {
+        const webBase = getWebBaseUrl();
+        const dealUrl = `${webBase}/deal/${deal.id}?t=${encodeURIComponent(viewToken)}`;
 
-      const transporter = getTransporter();
-      const subjectMail = `Depozitka: návrh bezpečné platby`;
-      const text = [
-        `Dobrý den,`,
-        ``,
-        `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
-        ``,
-        `Název: ${title}`,
-        `Cena (vč. dopravy): ${totalAmountCzk.toLocaleString("cs-CZ")} Kč`,
-        externalUrl ? `Odkaz: ${externalUrl}` : null,
-        ``,
-        `Otevřít nabídku: ${dealUrl}`,
-        ``,
-        `Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.`,
-      ]
-        .filter(Boolean)
-        .join("\n");
+        const transporter = getTransporter();
+        const subjectMail = `Depozitka: návrh bezpečné platby`;
+        const text = [
+          `Dobrý den,`,
+          ``,
+          `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
+          ``,
+          `Název: ${title}`,
+          `Cena (vč. dopravy): ${totalAmountCzk.toLocaleString("cs-CZ")} Kč`,
+          externalUrl ? `Odkaz: ${externalUrl}` : null,
+          ``,
+          `Otevřít nabídku: ${dealUrl}`,
+          ``,
+          `Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
-      await transporter.sendMail({
-        from: SMTP_FROM,
-        to: counterpartyEmail,
-        replyTo: initiatorEmail,
-        subject: subjectMail,
-        text,
-      });
+        await transporter.sendMail({
+          from: SMTP_FROM,
+          to: counterpartyEmail,
+          replyTo: initiatorEmail,
+          subject: subjectMail,
+          text,
+        });
 
-      inviteSent = true;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn("Deal invite email failed", { dealId: deal.id, error: msg });
+        inviteSent = true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("Deal invite email failed", { dealId: deal.id, error: msg });
+      }
     }
 
     return json(
@@ -322,7 +328,7 @@ export async function POST(req: Request) {
         ok: true,
         dealId: String(deal.id),
         viewToken,
-        status: "sent",
+        status: sendInvite ? "sent" : "draft",
         inviteSent,
         attachedCount: Array.isArray(body.attachments) ? body.attachments.length : 0,
       },
