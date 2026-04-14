@@ -80,6 +80,11 @@ function unwrapFacebookRedirect(u: URL): URL {
   return u;
 }
 
+function isFacebookHost(u: URL): boolean {
+  const h = u.hostname.toLowerCase();
+  return h === "facebook.com" || h.endsWith(".facebook.com") || h === "fb.com" || h.endsWith(".fb.com");
+}
+
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || undefined;
 
@@ -93,6 +98,17 @@ export async function POST(req: Request) {
   try {
     const u0 = parsePublicHttpUrl(body.url);
     const u = unwrapFacebookRedirect(u0);
+
+    if (isFacebookHost(u)) {
+      return json(
+        400,
+        {
+          ok: false,
+          error: "FB_LOGIN_REQUIRED",
+        },
+        origin,
+      );
+    }
 
     const r = await fetch(u.toString(), {
       method: "GET",
