@@ -68,7 +68,7 @@ export async function POST(req: Request) {
 
     // Ensure the path belongs to this deal (either attachment row or OG image path)
     let allowed = false;
-    const ogPath = String((deal as any).external_image_storage_path || "");
+    const ogPath = String(deal.external_image_storage_path || "");
     if (ogPath && ogPath === storagePath) {
       allowed = true;
     } else {
@@ -85,8 +85,18 @@ export async function POST(req: Request) {
       return json(403, { ok: false, error: "FILE_NOT_ALLOWED" }, origin);
     }
 
-    const sb = supabase as unknown as { storage: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const { data: signed, error: signErr } = await sb.storage
+    const storageClient = (supabase as unknown as {
+      storage: {
+        from: (bucket: string) => {
+          createSignedUrl: (
+            path: string,
+            expiresIn: number,
+          ) => Promise<{ data: { signedUrl?: string } | null; error: unknown }>;
+        };
+      };
+    }).storage;
+
+    const { data: signed, error: signErr } = await storageClient
       .from("dpt-deal-attachments")
       .createSignedUrl(storagePath, 60 * 60);
 
@@ -95,7 +105,7 @@ export async function POST(req: Request) {
     }
 
     return json(200, { ok: true, signedUrl: signed.signedUrl }, origin);
-  } catch (e: any) {
+  } catch (e: unknown) {
     const code =
       typeof e === "object" && e !== null && "code" in e ? String((e as { code?: unknown }).code) : undefined;
     const message = e instanceof Error ? e.message : String(e);

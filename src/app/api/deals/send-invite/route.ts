@@ -11,6 +11,18 @@ type Body = {
   viewToken: string;
 };
 
+type DealRow = {
+  id: string;
+  status: string;
+  view_token_hash: string | null;
+  view_token_expires_at: string | null;
+  initiator_email: string | null;
+  counterparty_email: string | null;
+  title: string | null;
+  total_amount_czk: number | null;
+  external_url: string | null;
+};
+
 function json(status: number, data: unknown, origin?: string) {
   return new NextResponse(JSON.stringify(data), {
     status,
@@ -67,8 +79,9 @@ export async function POST(req: Request) {
       return json(409, { ok: false, error: "INVALID_STATE" }, origin);
     }
 
-    const initiatorEmail = normalizeEmail((deal as any).initiator_email);
-    const counterpartyEmail = normalizeEmail((deal as any).counterparty_email);
+    const dealRow = deal as DealRow;
+    const initiatorEmail = normalizeEmail(dealRow.initiator_email);
+    const counterpartyEmail = normalizeEmail(dealRow.counterparty_email);
     assert(initiatorEmail.includes("@"), "INVALID_INITIATOR_EMAIL");
     assert(counterpartyEmail.includes("@"), "INVALID_COUNTERPARTY_EMAIL");
 
@@ -86,9 +99,9 @@ export async function POST(req: Request) {
         "",
         `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
         "",
-        `Název: ${String((deal as any).title || "").slice(0, 180)}`,
-        `Cena (vč. dopravy): ${Number((deal as any).total_amount_czk).toLocaleString("cs-CZ")} Kč`,
-        (deal as any).external_url ? `Odkaz: ${(deal as any).external_url}` : null,
+        `Název: ${String(dealRow.title || "").slice(0, 180)}`,
+        `Cena (vč. dopravy): ${Number(dealRow.total_amount_czk).toLocaleString("cs-CZ")} Kč`,
+        dealRow.external_url ? `Odkaz: ${dealRow.external_url}` : null,
         "",
         `Otevřít nabídku: ${dealUrl}`,
         "",

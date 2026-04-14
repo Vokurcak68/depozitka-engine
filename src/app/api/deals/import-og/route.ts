@@ -108,36 +108,45 @@ function pickFromJsonLd(docs: unknown[]): { title?: string; description?: string
   let title: string | undefined;
   let description: string | undefined;
 
-  const visit = (node: any) => {
-    if (!node || typeof node !== "object") return;
+  const asObject = (v: unknown): Record<string, unknown> | null =>
+    typeof v === "object" && v !== null ? (v as Record<string, unknown>) : null;
 
-    // If graph, walk it
+  const visit = (node: unknown) => {
     if (Array.isArray(node)) {
       for (const n of node) visit(n);
       return;
     }
 
-    if (node["@graph"]) visit(node["@graph"]);
+    const obj = asObject(node);
+    if (!obj) return;
 
-    const name = typeof node.name === "string" ? node.name : undefined;
-    const desc = typeof node.description === "string" ? node.description : undefined;
+    // If graph, walk it
+    if ("@graph" in obj) visit(obj["@graph"]);
+
+    const name = typeof obj.name === "string" ? obj.name : undefined;
+    const desc = typeof obj.description === "string" ? obj.description : undefined;
 
     if (!title && name) title = name;
     if (!description && desc) description = desc;
 
-    const img = node.image;
-    if (typeof img === "string") images.push(img);
-    else if (Array.isArray(img)) {
+    const img = obj.image;
+    if (typeof img === "string") {
+      images.push(img);
+    } else if (Array.isArray(img)) {
       for (const it of img) {
         if (typeof it === "string") images.push(it);
-        else if (it && typeof it === "object" && typeof it.url === "string") images.push(it.url);
+        else {
+          const itObj = asObject(it);
+          if (itObj && typeof itObj.url === "string") images.push(itObj.url);
+        }
       }
-    } else if (img && typeof img === "object" && typeof img.url === "string") {
-      images.push(img.url);
+    } else {
+      const imgObj = asObject(img);
+      if (imgObj && typeof imgObj.url === "string") images.push(imgObj.url);
     }
   };
 
-  for (const d of docs) visit(d as any);
+  for (const d of docs) visit(d);
 
   const uniqImages = Array.from(new Set(images.map((s) => s.trim()).filter(Boolean)));
   return { title, description, images: uniqImages.length ? uniqImages : undefined };
@@ -171,8 +180,23 @@ async function downloadImageToStorage(u: URL, pageBase: URL, imageUrlRaw: string
 
     const storagePath = `og/${Date.now()}-${randomId()}-${randomToken(4)}.${ext}`;
 
-    const sb = supabase as unknown as { storage: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const { error: upErr } = await sb.storage.from("dpt-deal-attachments").upload(storagePath, Buffer.from(ab), {
+    const storageClient = (supabase as unknown as {
+      storage: {
+        from: (bucket: string) => {
+          upload: (
+            path: string,
+            body: Buffer,
+            options: { contentType: string; upsert: boolean },
+          ) => Promise<{ error: unknown }>;
+          createSignedUrl: (
+            path: string,
+            expiresIn: number,
+          ) => Promise<{ data: { signedUrl?: string } | null; error: unknown }>;
+        };
+      };
+    }).storage;
+
+    const { error: upErr } = await storageClient.from("dpt-deal-attachments").upload(storagePath, Buffer.from(ab), {
       contentType: imgType,
       upsert: false,
     });
@@ -182,7 +206,7 @@ async function downloadImageToStorage(u: URL, pageBase: URL, imageUrlRaw: string
     // Signed URL for preview on the create form (before deal exists)
     let signedUrl: string | undefined;
     try {
-      const { data: signed, error: signErr } = await sb.storage.from("dpt-deal-attachments").createSignedUrl(storagePath, 60 * 60);
+      const { data: signed, error: signErr } = await storageClient.from("dpt-deal-attachments").createSignedUrl(storagePath, 60 * 60);
       if (!signErr && signed?.signedUrl) signedUrl = signed.signedUrl;
     } catch {
       // ignore

@@ -24,6 +24,23 @@ type Attachment = {
   fileSize: number;
 };
 
+type DbErrorLike = {
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
+  hint?: unknown;
+};
+
+function dbErrorDetails(err: unknown) {
+  const e = (typeof err === "object" && err !== null ? err : {}) as DbErrorLike;
+  return {
+    code: e.code,
+    message: e.message,
+    details: e.details,
+    hint: e.hint,
+  };
+}
+
 // NOTE: attachments are now primarily handled via /api/deals/upload-url (signed upload + DB row insert).
 // We keep attachments[] here for backward-compat / optional bulk-create flows.
 
@@ -105,10 +122,10 @@ export async function POST(req: Request) {
     const initiatorPhone = safeText(body.initiatorPhone, 40) || null;
     const counterpartyPhone = safeText(body.counterpartyPhone, 40) || null;
 
-    const deliveryMethod = (body.deliveryMethod as any) || null;
+    const deliveryMethod = body.deliveryMethod ?? null;
     assert(!deliveryMethod || deliveryMethod === "personal" || deliveryMethod === "carrier", "INVALID_DELIVERY_METHOD");
 
-    const shippingTerms = (body.shippingTerms as any) || null;
+    const shippingTerms = body.shippingTerms ?? null;
     assert(
       !shippingTerms ||
         ["buyer_pays", "seller_pays", "included", "split", "other"].includes(String(shippingTerms)),
@@ -223,12 +240,7 @@ export async function POST(req: Request) {
         {
           ok: false,
           error: "DB_INSERT_DEAL_FAILED",
-          details: {
-            code: (dealErr as any)?.code,
-            message: (dealErr as any)?.message,
-            details: (dealErr as any)?.details,
-            hint: (dealErr as any)?.hint,
-          },
+          details: dbErrorDetails(dealErr),
         },
         origin,
       );
@@ -270,12 +282,7 @@ export async function POST(req: Request) {
           {
             ok: false,
             error: "DB_INSERT_ATTACHMENTS_FAILED",
-            details: {
-              code: (attErr as any)?.code,
-              message: (attErr as any)?.message,
-              details: (attErr as any)?.details,
-              hint: (attErr as any)?.hint,
-            },
+            details: dbErrorDetails(attErr),
           },
           origin,
         );

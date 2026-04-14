@@ -11,6 +11,19 @@ import {
 import { getSettingNumber } from "@/lib/settings";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
 
+type DbErrorLike = {
+  code?: unknown;
+  message?: unknown;
+};
+
+function getDbErrorMeta(err: unknown) {
+  const e = (typeof err === "object" && err !== null ? err : {}) as DbErrorLike;
+  return {
+    code: String(e.code || ""),
+    message: String(e.message || ""),
+  };
+}
+
 export const runtime = "nodejs";
 
 type Body = {
@@ -110,12 +123,11 @@ export async function POST(req: Request) {
     // store reason (best-effort; keep reject working even if DB not migrated yet)
     const { error: rejErr } = await supabase
       .from("dpt_deals")
-      .update({ status: "rejected", rejection_reason: reason } as any)
+      .update({ status: "rejected", rejection_reason: reason })
       .eq("id", dealId);
 
     if (rejErr) {
-      const msg = String((rejErr as any)?.message || "");
-      const code = String((rejErr as any)?.code || "");
+      const { code, message: msg } = getDbErrorMeta(rejErr);
       const missingColumn = code === "42703" || msg.includes("rejection_reason");
 
       if (!missingColumn) return json(500, { ok: false, error: "DB_UPDATE_REJECT_FAILED" }, origin);

@@ -111,8 +111,17 @@ export async function POST(req: Request) {
     const ext = extFromContentType(contentType);
     const storagePath = `deals/${dealId}/${Date.now()}-${randomId()}.${ext}`;
 
-    const sb = supabase as unknown as { storage: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const { data: signed, error: signErr } = await sb.storage
+    const storageClient = (supabase as unknown as {
+      storage: {
+        from: (bucket: string) => {
+          createSignedUploadUrl: (
+            path: string,
+          ) => Promise<{ data: { signedUrl?: string; token?: string } | null; error: unknown }>;
+        };
+      };
+    }).storage;
+
+    const { data: signed, error: signErr } = await storageClient
       .from("dpt-deal-attachments")
       .createSignedUploadUrl(storagePath);
 
@@ -143,7 +152,12 @@ export async function POST(req: Request) {
       },
       origin,
     );
-  } catch (e: any) {
-    return json(400, { ok: false, error: e?.code || e?.message || "BAD_REQUEST" }, origin);
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code?: unknown }).code)
+        : undefined;
+    const message = e instanceof Error ? e.message : String(e);
+    return json(400, { ok: false, error: code || message || "BAD_REQUEST" }, origin);
   }
 }
