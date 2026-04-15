@@ -10,6 +10,7 @@ import {
 } from "@/lib/deals";
 import { getSettingNumber } from "@/lib/settings";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
+import { buildDealRejectedEmail } from "@/lib/deal-email";
 
 type DbErrorLike = {
   code?: unknown;
@@ -147,30 +148,20 @@ export async function POST(req: Request) {
 
       if (fullDeal?.initiator_email) {
         const transporter = getTransporter();
-        const subject = `Depozitka: nabídka byla zamítnuta`;
-        const text = [
-          `Dobrý den,`,
-          ``,
-          `Protistrana zamítla nabídku bezpečné platby.`,
-          ``,
-          `Název: ${fullDeal.title}`,
-          `Cena: ${Number(fullDeal.total_amount_czk).toLocaleString("cs-CZ")} Kč`,
-          fullDeal.external_url ? `Odkaz: ${fullDeal.external_url}` : null,
-          ``,
-          `Důvod zamítnutí:`,
+        const mail = buildDealRejectedEmail({
+          title: String(fullDeal.title || ""),
+          totalAmountCzk: Number(fullDeal.total_amount_czk),
           reason,
-          ``,
-          `Pokud chcete pokračovat, upravte nabídku a pošlete novou.`,
-        ]
-          .filter(Boolean)
-          .join("\n");
+          externalUrl: fullDeal.external_url,
+        });
 
         await transporter.sendMail({
           from: SMTP_FROM,
           to: String(fullDeal.initiator_email),
           replyTo: String(fullDeal.counterparty_email || "") || undefined,
-          subject,
-          text,
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
         });
       }
     } catch (e: unknown) {

@@ -14,6 +14,7 @@ import {
 } from "@/lib/deals";
 import { corsHeaders } from "@/lib/direct-deals";
 import { getSettingNumber } from "@/lib/settings";
+import { buildDealInviteEmail } from "@/lib/deal-email";
 
 export const runtime = "nodejs";
 
@@ -297,29 +298,21 @@ export async function POST(req: Request) {
         const dealUrl = `${webBase}/deal/${deal.id}?t=${encodeURIComponent(viewToken)}`;
 
         const transporter = getTransporter();
-        const subjectMail = `Depozitka: návrh bezpečné platby`;
-        const text = [
-          `Dobrý den,`,
-          ``,
-          `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
-          ``,
-          `Název: ${title}`,
-          `Cena (vč. dopravy): ${totalAmountCzk.toLocaleString("cs-CZ")} Kč`,
-          externalUrl ? `Odkaz: ${externalUrl}` : null,
-          ``,
-          `Otevřít nabídku: ${dealUrl}`,
-          ``,
-          `Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.`,
-        ]
-          .filter(Boolean)
-          .join("\n");
+        const mail = buildDealInviteEmail({
+          initiator: initiatorEmail,
+          title,
+          totalAmountCzk,
+          dealUrl,
+          externalUrl,
+        });
 
         await transporter.sendMail({
           from: SMTP_FROM,
           to: counterpartyEmail,
           replyTo: initiatorEmail,
-          subject: subjectMail,
-          text,
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
         });
 
         inviteSent = true;

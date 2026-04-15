@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { corsHeaders } from "@/lib/direct-deals";
 import { assert, safeText, normalizeEmail, hashViewToken, safeEqual, getWebBaseUrl } from "@/lib/deals";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
+import { buildDealInviteEmail } from "@/lib/deal-email";
 
 export const runtime = "nodejs";
 
@@ -89,26 +90,21 @@ export async function POST(req: Request) {
     const dealUrl = `${webBase}/deal/${deal.id}?t=${encodeURIComponent(viewToken)}`;
 
     const transporter = getTransporter();
+    const mail = buildDealInviteEmail({
+      initiator: initiatorEmail,
+      title: String(dealRow.title || "").slice(0, 180),
+      totalAmountCzk: Number(dealRow.total_amount_czk),
+      dealUrl,
+      externalUrl: dealRow.external_url,
+    });
+
     await transporter.sendMail({
       from: SMTP_FROM,
       to: counterpartyEmail,
       replyTo: initiatorEmail,
-      subject: "Depozitka: návrh bezpečné platby",
-      text: [
-        "Dobrý den,",
-        "",
-        `${initiatorEmail} vám poslal(a) návrh bezpečné platby přes Depozitku.`,
-        "",
-        `Název: ${String(dealRow.title || "").slice(0, 180)}`,
-        `Cena (vč. dopravy): ${Number(dealRow.total_amount_czk).toLocaleString("cs-CZ")} Kč`,
-        dealRow.external_url ? `Odkaz: ${dealRow.external_url}` : null,
-        "",
-        `Otevřít nabídku: ${dealUrl}`,
-        "",
-        "Na stránce si vyžádáte OTP kód a nabídku potvrdíte nebo odmítnete.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
     });
 
     const { error: updErr } = await supabase

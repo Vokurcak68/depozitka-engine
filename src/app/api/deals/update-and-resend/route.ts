@@ -11,6 +11,7 @@ import {
   getWebBaseUrl,
 } from "@/lib/deals";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
+import { buildDealUpdatedEmail } from "@/lib/deal-email";
 import { getSettingNumber } from "@/lib/settings";
 
 export const runtime = "nodejs";
@@ -147,20 +148,20 @@ export async function POST(req: Request) {
       const dealUrl = `${webBase}/deal/${newDeal.id}?t=${encodeURIComponent(newViewToken)}`;
 
       const transporter = getTransporter();
+      const mail = buildDealUpdatedEmail({
+        initiator: initiatorEmail,
+        title,
+        totalAmountCzk,
+        dealUrl,
+      });
+
       await transporter.sendMail({
         from: SMTP_FROM,
         to: counterpartyEmail,
         replyTo: initiatorEmail,
-        subject: "Depozitka: upravená nabídka bezpečné platby",
-        text: [
-          "Dobrý den,",
-          "",
-          `${initiatorEmail} upravil(a) nabídku bezpečné platby.`,
-          "",
-          `Název: ${title}`,
-          `Cena: ${totalAmountCzk.toLocaleString("cs-CZ")} Kč`,
-          `Otevřít nabídku: ${dealUrl}`,
-        ].join("\n"),
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
       });
 
       inviteSent = true;

@@ -11,6 +11,7 @@ import {
   getWebBaseUrl,
 } from "@/lib/deals";
 import { getTransporter, SMTP_FROM } from "@/lib/smtp";
+import { buildDealOtpEmail } from "@/lib/deal-email";
 import { getSettingNumber } from "@/lib/settings";
 
 export const runtime = "nodejs";
@@ -110,20 +111,20 @@ export async function POST(req: Request) {
       const dealUrl = `${webBase}/deal/${dealId}?t=${encodeURIComponent(viewToken)}`;
 
       const transporter = getTransporter();
+      const mail = buildDealOtpEmail({
+        title: String(deal.title || ""),
+        otp,
+        otpExpiryMinutes,
+        dealUrl,
+      });
+
       await transporter.sendMail({
         from: SMTP_FROM,
         to: deal.counterparty_email,
         replyTo: deal.initiator_email,
-        subject: "Depozitka: ověřovací kód (OTP)",
-        text: [
-          "Dobrý den,",
-          "",
-          `Název nabídky: ${deal.title}`,
-          `Váš OTP kód: ${otp}`,
-          `Platnost: ${otpExpiryMinutes} minut`,
-          "",
-          `Otevřít nabídku: ${dealUrl}`,
-        ].join("\n"),
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
       });
     } catch {
       // do not fail request due to SMTP
