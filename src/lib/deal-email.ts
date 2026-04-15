@@ -44,6 +44,8 @@ function buildEmail(params: {
   ctaUrl?: string;
   note?: string;
 }): BuiltMail {
+  const ACCENT = "#2563eb";
+
   const rows = (params.rows || []).filter((r) => r.value && String(r.value).trim().length > 0);
   const steps = (params.steps || []).filter(Boolean);
 
@@ -82,9 +84,9 @@ function buildEmail(params: {
 
   const htmlSteps = steps.length
     ? `
-      <div style="margin:14px 0 0;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;">
-        <div style="font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Co dál</div>
-        <ol style="margin:0;padding-left:18px;color:#6b4f1d;font-size:13px;line-height:1.6;">
+      <div style="margin:16px 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;">
+        <div style="font-size:12px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Co dál</div>
+        <ol style="margin:0;padding-left:18px;color:#374151;font-size:14px;line-height:1.6;">
           ${steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
         </ol>
       </div>
@@ -93,21 +95,21 @@ function buildEmail(params: {
 
   const ctaHtml = params.ctaUrl
     ? `
-      <p style="margin:20px 0 8px;">
-        <a href="${escapeHtml(params.ctaUrl)}" style="display:inline-block;background:linear-gradient(180deg,#c2410c 0%,#9a3412 100%);color:#ffffff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:700;font-size:14px;box-shadow:0 2px 8px rgba(154,52,18,.25);">
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${escapeHtml(params.ctaUrl)}" style="display:inline-block;padding:12px 32px;background-color:${ACCENT};color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:6px;">
           ${escapeHtml(params.ctaLabel || "Otevřít")}
         </a>
-      </p>
-      <p style="margin:8px 0 0;color:#64748b;font-size:12px;line-height:1.45;word-break:break-all;">${escapeHtml(params.ctaUrl)}</p>
+      </div>
+      <p style="margin:8px 0 0;color:#6b7280;font-size:12px;line-height:1.45;word-break:break-all;">${escapeHtml(params.ctaUrl)}</p>
     `
     : "";
 
   const noteHtml = params.note
-    ? `<p style="margin:16px 0 0;color:#6b4f1d;font-size:13px;line-height:1.55;">${escapeHtml(params.note)}</p>`
+    ? `<p style="margin:16px 0 0;color:#374151;font-size:13px;line-height:1.6;">${escapeHtml(params.note)}</p>`
     : "";
 
   const badgeHtml = params.badge
-    ? `<div style="display:inline-block;margin:0 0 10px;padding:4px 10px;border-radius:999px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:12px;font-weight:700;">${escapeHtml(params.badge)}</div>`
+    ? `<div style="display:inline-block;margin:0 0 10px;padding:4px 10px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:12px;font-weight:700;">${escapeHtml(params.badge)}</div>`
     : "";
 
   const html = `
@@ -120,25 +122,22 @@ function buildEmail(params: {
     <meta name="supported-color-schemes" content="only light" />
     <title>${escapeHtml(params.subject)}</title>
   </head>
-  <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1f2937;">
+  <body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(params.preview)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ffffff;padding:24px 12px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-collapse:collapse;">
       <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+        <td align="center" style="padding:24px 16px;background-color:#ffffff;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:580px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;border-collapse:collapse;">
             <tr>
-              <td style="height:4px;background:#2563eb;"></td>
-            </tr>
-            <tr>
-              <td style="padding:22px 24px 16px;border-bottom:1px solid #e5e7eb;background:#ffffff;">
-                <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2563eb;">Depozitka.eu</div>
+              <td style="padding:28px 32px 16px;text-align:center;border-bottom:3px solid ${ACCENT};background-color:#ffffff;">
+                <div style="font-size:22px;font-weight:700;color:${ACCENT};margin:0 0 12px;">Depozitka.eu</div>
                 ${badgeHtml}
                 <h1 style="margin:8px 0 0;font-size:22px;line-height:1.25;color:#111827;">${escapeHtml(params.title)}</h1>
               </td>
             </tr>
             <tr>
-              <td style="padding:22px 24px;background:#ffffff;">
-                <p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">${escapeHtml(params.intro)}</p>
+              <td style="padding:28px 32px 32px;background-color:#ffffff;">
+                <p style="margin:0;color:#374151;font-size:15px;line-height:1.6;">${escapeHtml(params.intro)}</p>
                 ${htmlRows}
                 ${htmlSteps}
                 ${ctaHtml}
@@ -146,7 +145,7 @@ function buildEmail(params: {
               </td>
             </tr>
             <tr>
-              <td style="padding:16px 24px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.55;background:#ffffff;">
+              <td style="padding:20px 32px;background-color:#ffffff;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;line-height:1.6;">
                 Tento email byl odeslán automaticky systémem Depozitka.
               </td>
             </tr>
