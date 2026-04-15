@@ -335,7 +335,7 @@ export async function POST(req: Request) {
     // Bonus: screenshot celé stránky inzerátu (best-effort přes veřejný screenshot endpoint)
     // Pokud to selže, vracíme pouze klasické OG/JSON-LD obrázky.
     try {
-      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${encodeURIComponent(u.toString())}`;
+      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${u.toString()}`;
       const screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
       if (screenshotAtt) {
         importedAttachments.push({
