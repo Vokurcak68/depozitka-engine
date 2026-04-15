@@ -452,6 +452,12 @@ export async function POST(req: Request) {
 
       if (isSbazarHost(u)) {
         screenshotAtt = await downloadBrowserlessScreenshot(u);
+
+        // Guard: některé Browserless odpovědi mohou být technicky validní obrázek,
+        // ale prakticky prázdný (typicky bílá plocha). V takovém případě fallback na thum.io.
+        if (screenshotAtt && screenshotAtt.fileSize < 50_000) {
+          screenshotAtt = null;
+        }
       }
 
       if (!screenshotAtt) {
