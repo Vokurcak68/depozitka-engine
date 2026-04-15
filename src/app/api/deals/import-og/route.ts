@@ -313,7 +313,12 @@ async function uploadImageBufferToStorage(
 }
 
 async function downloadBrowserlessScreenshot(u: URL): Promise<ImportedAttachment | null> {
-  const token = process.env.BROWSERLESS_TOKEN || process.env.BROWSERLESS_API_TOKEN;
+  const token =
+    process.env.BROWSERLESS_TOKEN ||
+    process.env.BROWSERLESS_API_TOKEN ||
+    process.env.BROWSERLESS_API_KEY ||
+    process.env.BROWSERLESS_KEY;
+
   if (!token) return null;
 
   const base = (process.env.BROWSERLESS_URL || "https://production-sfo.browserless.io").replace(/\/$/, "");
@@ -331,9 +336,8 @@ async function downloadBrowserlessScreenshot(u: URL): Promise<ImportedAttachment
         options: {
           type: "png",
           fullPage: true,
-          waitUntil: "networkidle2",
         },
-        // Browserless feature for consent overlays (best-effort; ignored if unsupported).
+        // Best-effort: pokud instance podporuje tento flag, zkusí odstranit consent bannery.
         blockConsentModals: true,
       }),
       signal: AbortSignal.timeout(25_000),
@@ -440,8 +444,9 @@ export async function POST(req: Request) {
     }
 
     // Bonus: screenshot celé stránky inzerátu.
-    // 1) Sbazar preferuje Browserless (umí cookie/consent overlay handling).
-    // 2) Ostatní weby (a fallback) přes thum.io.
+    // 1) Sbazar preferuje Browserless (consent/cookie handling).
+    // 2) Když Browserless selže, fallback na thum.io (aby screenshot aspoň někdy byl).
+    // 3) Ostatní weby jedou přímo přes thum.io.
     try {
       let screenshotAtt: ImportedAttachment | null = null;
 
@@ -449,7 +454,7 @@ export async function POST(req: Request) {
         screenshotAtt = await downloadBrowserlessScreenshot(u);
       }
 
-      if (!screenshotAtt && !isSbazarHost(u)) {
+      if (!screenshotAtt) {
         const screenshotSource = screenshotTargetUrl(u);
         const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
         screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
