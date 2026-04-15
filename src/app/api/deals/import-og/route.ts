@@ -315,7 +315,7 @@ export async function POST(req: Request) {
         ...(twImage ? [twImage] : []),
         ...((jsonLdPicked.images || []) as string[]),
       ].map((s) => String(s).trim()).filter(Boolean)),
-    ).slice(0, 6);
+    ).slice(0, 5);
 
     const maxImgBytes = 5 * 1024 * 1024;
 
@@ -328,8 +328,23 @@ export async function POST(req: Request) {
       if (!att) continue;
       importedAttachments.push(att);
       if (!imageStoragePath) imageStoragePath = att.storagePath;
-      // cap
-      if (importedAttachments.length >= 6) break;
+      // cap (ponecháme prostor na 1 screenshot stránky)
+      if (importedAttachments.length >= 5) break;
+    }
+
+    // Bonus: screenshot celé stránky inzerátu (best-effort přes veřejný screenshot endpoint)
+    // Pokud to selže, vracíme pouze klasické OG/JSON-LD obrázky.
+    try {
+      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${encodeURIComponent(u.toString())}`;
+      const screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
+      if (screenshotAtt) {
+        importedAttachments.push({
+          ...screenshotAtt,
+          fileName: "screenshot-inzeratu.jpg",
+        });
+      }
+    } catch {
+      // ignore screenshot errors
     }
 
     return json(
