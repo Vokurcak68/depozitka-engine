@@ -243,6 +243,11 @@ function isFacebookHost(u: URL): boolean {
   return h === "facebook.com" || h.endsWith(".facebook.com") || h === "fb.com" || h.endsWith(".fb.com");
 }
 
+function isSbazarHost(u: URL): boolean {
+  const h = u.hostname.toLowerCase();
+  return h === "sbazar.cz" || h === "www.sbazar.cz" || h === "m.sbazar.cz";
+}
+
 function screenshotTargetUrl(u: URL): string {
   const h = u.hostname.toLowerCase();
 
@@ -254,6 +259,95 @@ function screenshotTargetUrl(u: URL): string {
   }
 
   return u.toString();
+}
+
+async function uploadImageBufferToStorage(
+  ab: ArrayBuffer,
+  contentType: string,
+  fileNameBase: string,
+): Promise<ImportedAttachment | null> {
+  const size = ab.byteLength;
+  if (size <= 0 || size > 8 * 1024 * 1024) return null;
+
+  const ct = String(contentType || "application/octet-stream").toLowerCase();
+  const ext = ct.includes("png") ? "png" : ct.includes("webp") ? "webp" : "jpg";
+  const storagePath = `og/${Date.now()}-${randomId()}-${randomToken(4)}.${ext}`;
+
+  const storageClient = (supabase as unknown as {
+    storage: {
+      from: (bucket: string) => {
+        upload: (
+          path: string,
+          body: Buffer,
+          options: { contentType: string; upsert: boolean },
+        ) => Promise<{ error: unknown }>;
+        createSignedUrl: (
+          path: string,
+          expiresIn: number,
+        ) => Promise<{ data: { signedUrl?: string } | null; error: unknown }>;
+      };
+    };
+  }).storage;
+
+  const { error: upErr } = await storageClient.from("dpt-deal-attachments").upload(storagePath, Buffer.from(ab), {
+    contentType: ct,
+    upsert: false,
+  });
+  if (upErr) return null;
+
+  let signedUrl: string | undefined;
+  try {
+    const { data: signed, error: signErr } = await storageClient.from("dpt-deal-attachments").createSignedUrl(storagePath, 60 * 60);
+    if (!signErr && signed?.signedUrl) signedUrl = signed.signedUrl;
+  } catch {
+    // ignore
+  }
+
+  return {
+    storagePath,
+    fileName: `${fileNameBase}.${ext}`,
+    contentType: ct,
+    fileSize: size,
+    signedUrl,
+  };
+}
+
+async function downloadBrowserlessScreenshot(u: URL): Promise<ImportedAttachment | null> {
+  const token = process.env.BROWSERLESS_TOKEN || process.env.BROWSERLESS_API_TOKEN;
+  if (!token) return null;
+
+  const base = (process.env.BROWSERLESS_URL || "https://production-sfo.browserless.io").replace(/\/$/, "");
+  const endpoint = `${base}/screenshot?token=${encodeURIComponent(token)}`;
+
+  try {
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-cache",
+      },
+      body: JSON.stringify({
+        url: u.toString(),
+        options: {
+          type: "png",
+          fullPage: true,
+          waitUntil: "networkidle2",
+        },
+        // Browserless feature for consent overlays (best-effort; ignored if unsupported).
+        blockConsentModals: true,
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+
+    if (!r.ok) return null;
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (!ct.includes("image/")) return null;
+
+    const ab = await r.arrayBuffer();
+    return await uploadImageBufferToStorage(ab, ct, "screenshot-inzeratu");
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: Request) {
@@ -345,12 +439,22 @@ export async function POST(req: Request) {
       if (importedAttachments.length >= 5) break;
     }
 
-    // Bonus: screenshot celé stránky inzerátu (best-effort přes veřejný screenshot endpoint)
-    // Pokud to selže, vracíme pouze klasické OG/JSON-LD obrázky.
+    // Bonus: screenshot celé stránky inzerátu.
+    // 1) Sbazar preferuje Browserless (umí cookie/consent overlay handling).
+    // 2) Ostatní weby (a fallback) přes thum.io.
     try {
-      const screenshotSource = screenshotTargetUrl(u);
-      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
-      const screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
+      let screenshotAtt: ImportedAttachment | null = null;
+
+      if (isSbazarHost(u)) {
+        screenshotAtt = await downloadBrowserlessScreenshot(u);
+      }
+
+      if (!screenshotAtt && !isSbazarHost(u)) {
+        const screenshotSource = screenshotTargetUrl(u);
+        const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
+        screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
+      }
+
       if (screenshotAtt) {
         importedAttachments.push({
           ...screenshotAtt,
