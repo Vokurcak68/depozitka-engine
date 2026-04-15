@@ -354,6 +354,31 @@ async function downloadBrowserlessScreenshot(u: URL): Promise<ImportedAttachment
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function downloadThumScreenshotWithRetry(u: URL): Promise<ImportedAttachment | null> {
+  const screenshotSource = screenshotTargetUrl(u);
+
+  // thum.io občas při prvním požadavku nestihne render a vrátí nic/přechodný výsledek.
+  // Krátký retry výrazně zvyšuje šanci, že screenshot bude hned při prvním importu.
+  const widths = [1400, 1200];
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const width = widths[Math.min(attempt, widths.length - 1)];
+    const screenshotUrl = `https://image.thum.io/get/width/${width}/noanimate/${screenshotSource}`;
+    const att = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
+    if (att) return att;
+
+    if (attempt < 2) {
+      await sleep(1200);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || undefined;
 
@@ -458,9 +483,7 @@ export async function POST(req: Request) {
           screenshotAtt = null;
         }
       } else {
-        const screenshotSource = screenshotTargetUrl(u);
-        const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
-        screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
+        screenshotAtt = await downloadThumScreenshotWithRetry(u);
       }
 
       if (screenshotAtt) {
