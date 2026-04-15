@@ -112,6 +112,11 @@ function buildEmail(params: {
     ? `<div style="display:inline-block;margin:0 0 10px;padding:4px 10px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:12px;font-weight:700;">${escapeHtml(params.badge)}</div>`
     : "";
 
+  const logoUrl = (process.env.DEPOSITKA_EMAIL_LOGO_URL || "https://depozitka.eu/brand/logo-transparent.png").trim();
+  const logoHtml = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Depozitka" style="max-width:200px;max-height:60px;display:block;margin:0 auto 12px;" />`
+    : `<h1 style="margin:0 0 12px;font-size:22px;color:${ACCENT};text-align:center;">Depozitka.eu</h1>`;
+
   const html = `
 <!doctype html>
 <html lang="cs" style="color-scheme:only light;supported-color-schemes:only light;">
@@ -120,23 +125,30 @@ function buildEmail(params: {
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="only light" />
     <meta name="supported-color-schemes" content="only light" />
+    <style>
+      :root { color-scheme: only light; supported-color-schemes: only light; }
+      body, table, td { background-color:#ffffff !important; }
+      @media (prefers-color-scheme: dark) {
+        body, table, td { background-color:#ffffff !important; }
+      }
+    </style>
     <title>${escapeHtml(params.subject)}</title>
   </head>
   <body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(params.preview)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-collapse:collapse;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;">
       <tr>
         <td align="center" style="padding:24px 16px;background-color:#ffffff;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:580px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;border-collapse:collapse;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
             <tr>
               <td style="padding:28px 32px 16px;text-align:center;border-bottom:3px solid ${ACCENT};background-color:#ffffff;">
-                <div style="font-size:22px;font-weight:700;color:${ACCENT};margin:0 0 12px;">Depozitka.eu</div>
+                ${logoHtml}
                 ${badgeHtml}
-                <h1 style="margin:8px 0 0;font-size:22px;line-height:1.25;color:#111827;">${escapeHtml(params.title)}</h1>
               </td>
             </tr>
             <tr>
               <td style="padding:28px 32px 32px;background-color:#ffffff;">
+                <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">${escapeHtml(params.title)}</h2>
                 <p style="margin:0;color:#374151;font-size:15px;line-height:1.6;">${escapeHtml(params.intro)}</p>
                 ${htmlRows}
                 ${htmlSteps}
@@ -146,7 +158,10 @@ function buildEmail(params: {
             </tr>
             <tr>
               <td style="padding:20px 32px;background-color:#ffffff;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;line-height:1.6;">
-                Tento email byl odeslán automaticky systémem Depozitka.
+                Depozitka.eu<br>
+                <a href="mailto:info@depozitka.eu" style="color:${ACCENT};">info@depozitka.eu</a><br>
+                <a href="https://depozitka.eu" style="color:${ACCENT};">https://depozitka.eu</a>
+                <br><span style="color:#9ca3af;">Tento email byl odeslán automaticky systémem Depozitka.</span>
               </td>
             </tr>
           </table>
