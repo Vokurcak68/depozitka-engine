@@ -444,9 +444,8 @@ export async function POST(req: Request) {
     }
 
     // Bonus: screenshot celé stránky inzerátu.
-    // 1) Sbazar preferuje Browserless (consent/cookie handling).
-    // 2) Když Browserless selže, fallback na thum.io (aby screenshot aspoň někdy byl).
-    // 3) Ostatní weby jedou přímo přes thum.io.
+    // Sbazar: jen Browserless (thum.io tam často vrací CMP/paywall mezistránku Seznamu).
+    // Ostatní weby: thum.io.
     try {
       let screenshotAtt: ImportedAttachment | null = null;
 
@@ -454,13 +453,11 @@ export async function POST(req: Request) {
         screenshotAtt = await downloadBrowserlessScreenshot(u);
 
         // Guard: některé Browserless odpovědi mohou být technicky validní obrázek,
-        // ale prakticky prázdný (typicky bílá plocha). V takovém případě fallback na thum.io.
+        // ale prakticky prázdný (typicky bílá plocha) => raději bez screenshotu.
         if (screenshotAtt && screenshotAtt.fileSize < 50_000) {
           screenshotAtt = null;
         }
-      }
-
-      if (!screenshotAtt) {
+      } else {
         const screenshotSource = screenshotTargetUrl(u);
         const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
         screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
