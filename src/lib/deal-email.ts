@@ -112,31 +112,33 @@ function buildEmail(params: {
 
   const html = `
 <!doctype html>
-<html lang="cs">
+<html lang="cs" style="color-scheme:only light;supported-color-schemes:only light;">
   <head>
     <meta charSet="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="only light" />
+    <meta name="supported-color-schemes" content="only light" />
     <title>${escapeHtml(params.subject)}</title>
   </head>
-  <body style="margin:0;padding:0;background:#fffaf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1f2937;">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1f2937;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(params.preview)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fffaf2;padding:24px 12px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ffffff;padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
             <tr>
-              <td style="height:5px;background:linear-gradient(90deg,#92400e 0%,#b45309 48%,#f59e0b 100%);"></td>
+              <td style="height:4px;background:#2563eb;"></td>
             </tr>
             <tr>
-              <td style="padding:20px 24px;background:linear-gradient(180deg,#fff7ed 0%,#ffffff 100%);border-bottom:1px solid #fde68a;">
-                <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a16207;">Depozitka.eu</div>
+              <td style="padding:22px 24px 16px;border-bottom:1px solid #e5e7eb;background:#ffffff;">
+                <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2563eb;">Depozitka.eu</div>
                 ${badgeHtml}
-                <h1 style="margin:8px 0 0;font-size:22px;line-height:1.25;color:#7c2d12;">${escapeHtml(params.title)}</h1>
+                <h1 style="margin:8px 0 0;font-size:22px;line-height:1.25;color:#111827;">${escapeHtml(params.title)}</h1>
               </td>
             </tr>
             <tr>
-              <td style="padding:22px 24px;">
-                <p style="margin:0;color:#6b4f1d;font-size:14px;line-height:1.6;">${escapeHtml(params.intro)}</p>
+              <td style="padding:22px 24px;background:#ffffff;">
+                <p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">${escapeHtml(params.intro)}</p>
                 ${htmlRows}
                 ${htmlSteps}
                 ${ctaHtml}
@@ -144,8 +146,8 @@ function buildEmail(params: {
               </td>
             </tr>
             <tr>
-              <td style="padding:16px 24px;border-top:1px solid #fde68a;color:#a16207;font-size:12px;line-height:1.55;">
-                Tento email byl odeslán automaticky z Depozitka.eu.
+              <td style="padding:16px 24px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.55;background:#ffffff;">
+                Tento email byl odeslán automaticky systémem Depozitka.
               </td>
             </tr>
           </table>
