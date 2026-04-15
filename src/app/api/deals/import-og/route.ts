@@ -243,6 +243,19 @@ function isFacebookHost(u: URL): boolean {
   return h === "facebook.com" || h.endsWith(".facebook.com") || h === "fb.com" || h.endsWith(".fb.com");
 }
 
+function screenshotTargetUrl(u: URL): string {
+  const h = u.hostname.toLowerCase();
+
+  // Sbazar občas na desktopu ukáže mezikrok s reklamou; mobilní host je pro screenshoty stabilnější.
+  if (h === "sbazar.cz" || h === "www.sbazar.cz") {
+    const mobile = new URL(u.toString());
+    mobile.hostname = "m.sbazar.cz";
+    return mobile.toString();
+  }
+
+  return u.toString();
+}
+
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || undefined;
 
@@ -335,7 +348,8 @@ export async function POST(req: Request) {
     // Bonus: screenshot celé stránky inzerátu (best-effort přes veřejný screenshot endpoint)
     // Pokud to selže, vracíme pouze klasické OG/JSON-LD obrázky.
     try {
-      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${u.toString()}`;
+      const screenshotSource = screenshotTargetUrl(u);
+      const screenshotUrl = `https://image.thum.io/get/width/1400/noanimate/${screenshotSource}`;
       const screenshotAtt = await downloadImageToStorage(u, u, screenshotUrl, 8 * 1024 * 1024);
       if (screenshotAtt) {
         importedAttachments.push({
