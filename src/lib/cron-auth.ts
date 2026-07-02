@@ -13,22 +13,26 @@ export function verifyCron(req: NextRequest): NextResponse | null {
     ? authHeader.slice("Bearer ".length).trim()
     : null;
 
-  const expectedManualToken = process.env.MANUAL_EMAIL_TRIGGER_TOKEN || cronSecret;
+  const expectedManualTokens = [
+    process.env.MANUAL_TRIGGER_TOKEN,
+    process.env.MANUAL_EMAIL_TRIGGER_TOKEN,
+    cronSecret,
+  ].filter((value): value is string => Boolean(value));
 
   // Vercel cron / server-to-server path
   if (cronSecret && bearerToken === cronSecret) {
     return null;
   }
 
-  // Manual trigger via Authorization: Bearer <MANUAL_EMAIL_TRIGGER_TOKEN>
-  // (used by Depozitka Core Cron tab)
-  if (expectedManualToken && bearerToken === expectedManualToken) {
+  // Manual trigger via Authorization: Bearer <manual token>
+  // (used by Depozitka Core admin UI)
+  if (bearerToken && expectedManualTokens.includes(bearerToken)) {
     return null;
   }
 
-  // Manual browser trigger path via query token
+  // Backward-compatible manual browser trigger path via query token
   const manualToken = req.nextUrl.searchParams.get("token");
-  if (expectedManualToken && manualToken === expectedManualToken) {
+  if (manualToken && expectedManualTokens.includes(manualToken)) {
     return null;
   }
 
@@ -37,7 +41,7 @@ export function verifyCron(req: NextRequest): NextResponse | null {
     return null;
   }
 
-  if (!cronSecret && !expectedManualToken) {
+  if (!cronSecret && expectedManualTokens.length === 0) {
     return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
   }
 
@@ -46,7 +50,7 @@ export function verifyCron(req: NextRequest): NextResponse | null {
 
 export function withCors(res: NextResponse): NextResponse {
   res.headers.set("Access-Control-Allow-Origin", "*");
-  res.headers.set("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
   return res;
 }
