@@ -5,6 +5,10 @@ import { executeDailyJobs } from "@/lib/jobs/daily-jobs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+function isExternalDailyJobsEnabled(): boolean {
+  return process.env.ENABLE_EXTERNAL_DAILY_JOBS === "true";
+}
+
 function getTriggeredBy(req: NextRequest): string {
   const source = req.nextUrl.searchParams.get("source")?.trim();
   if (!source) return "external_trigger";
@@ -14,6 +18,19 @@ function getTriggeredBy(req: NextRequest): string {
 }
 
 async function run(req: NextRequest) {
+  if (!isExternalDailyJobsEnabled()) {
+    return withCors(
+      NextResponse.json(
+        {
+          ok: false,
+          error: "external_daily_jobs_disabled",
+          message: "External daily jobs trigger is disabled.",
+        },
+        { status: 410 }
+      )
+    );
+  }
+
   const authError = verifyCron(req);
   if (authError) return withCors(authError);
 
